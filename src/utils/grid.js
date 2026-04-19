@@ -13,17 +13,41 @@ export function clamp(value, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function applyRegionToGrid(grid, region, updater) {
+export function isCellInRegion(row, col, region) {
+  return (
+    region === 'full' ||
+    (region === 'upstream-half' && col < GRID_COLS / 2) ||
+    (region === 'downstream-half' && col >= GRID_COLS / 2) ||
+    (region === 'center-strip' && col >= 5 && col <= 10) ||
+    (region === 'edge-columns' && (col <= 2 || col >= GRID_COLS - 3)) ||
+    (region?.type === 'row' && region.index === row) ||
+    (region?.type === 'column' && region.index === col) ||
+    (region?.type === 'rect' &&
+      row >= region.startRow &&
+      row <= region.endRow &&
+      col >= region.startCol &&
+      col <= region.endCol)
+  );
+}
+
+export function countActiveCellsInRegion(region) {
+  let count = 0;
+  for (let row = 0; row < GRID_ROWS; row += 1) {
+    for (let col = 0; col < GRID_COLS; col += 1) {
+      if (isCellInRegion(row, col, region)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+export function applyRegionToGrid(grid, region, updater, maxValue = 7) {
   const next = cloneGrid(grid);
   for (let row = 0; row < GRID_ROWS; row += 1) {
     for (let col = 0; col < GRID_COLS; col += 1) {
-      const inRegion =
-        region === 'full' ||
-        (region?.type === 'row' && region.index === row) ||
-        (region?.type === 'column' && region.index === col) ||
-        (region?.type === 'rect' && row >= region.startRow && row <= region.endRow && col >= region.startCol && col <= region.endCol);
-      if (inRegion) {
-        next[row][col] = clamp(updater(next[row][col], row, col));
+      if (isCellInRegion(row, col, region)) {
+        next[row][col] = clamp(updater(next[row][col], row, col), 0, maxValue);
       }
     }
   }
@@ -34,7 +58,7 @@ export function mirrorGridHorizontal(grid) {
   return grid.map((row) => [...row].reverse());
 }
 
-export function smoothGrid(grid) {
+export function smoothGrid(grid, maxValue = 7) {
   const next = createEmptyGrid();
   for (let row = 0; row < GRID_ROWS; row += 1) {
     for (let col = 0; col < GRID_COLS; col += 1) {
@@ -46,7 +70,7 @@ export function smoothGrid(grid) {
           count += 1;
         }
       }
-      next[row][col] = clamp(sum / count);
+      next[row][col] = clamp(sum / count, 0, maxValue);
     }
   }
   return next;

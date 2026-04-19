@@ -1,10 +1,11 @@
 import { clamp } from '../utils/grid';
 
-function cellColor(value) {
-  const safe = clamp(value);
-  const hue = 210 - safe * 180;
-  const lightness = 22 + safe * 45;
-  return `hsl(${hue}, 80%, ${lightness}%)`;
+function cellColor(value, minValue, maxValue) {
+  const normalized = clamp((value - minValue) / Math.max(0.001, maxValue - minValue));
+  const hue = 220 - normalized * 200;
+  const saturation = 72;
+  const lightness = 28 + normalized * 42;
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
 export default function WallGrid({
@@ -14,6 +15,9 @@ export default function WallGrid({
   onPointerUp,
   selectedCells = new Set(),
   compact = false,
+  minValue = 0,
+  maxValue = 7,
+  formatValue = (value) => value.toFixed(1),
 }) {
   return (
     <div className={`wall-grid ${compact ? 'compact' : ''}`} onPointerUp={onPointerUp}>
@@ -26,13 +30,13 @@ export default function WallGrid({
               key={key}
               type="button"
               className={`cell ${selected ? 'selected' : ''}`}
-              style={{ backgroundColor: cellColor(value) }}
-              onPointerDown={() => interactive && onCellPointer?.(rowIndex, colIndex, true)}
+              style={{ backgroundColor: cellColor(value, minValue, maxValue) }}
+              onPointerDown={(event) => interactive && onCellPointer?.(rowIndex, colIndex, true, event)}
               onPointerEnter={(event) => {
-                if (interactive && event.buttons === 1) onCellPointer?.(rowIndex, colIndex, false);
+                if (interactive && event.buttons === 1) onCellPointer?.(rowIndex, colIndex, false, event);
               }}
             >
-              <span>{value.toFixed(2)}</span>
+              <span>{formatValue(value)}</span>
             </button>
           );
         }),

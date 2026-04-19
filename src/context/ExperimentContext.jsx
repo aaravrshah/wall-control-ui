@@ -1,34 +1,90 @@
 import { createContext, useCallback, useContext, useMemo } from 'react';
-import { defaultExperiment, seedSavedExperiments } from '../data/presets';
+import {
+  cloneCalibration,
+  cloneExperiment,
+  defaultCalibration,
+  defaultExperiment,
+  seedSavedExperiments,
+} from '../data/presets';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import { loadState, saveState } from '../utils/storage';
 import { cloneGrid } from '../utils/grid';
 
 const ExperimentContext = createContext(null);
 
+function getDefaults() {
+  return {
+    currentExperiment: cloneExperiment(defaultExperiment),
+    savedExperiments: seedSavedExperiments.map(cloneExperiment),
+    calibration: cloneCalibration(defaultCalibration),
+    history: {
+      past: [],
+      future: [],
+    },
+    runState: {
+      status: 'idle',
+      elapsedTime: 0,
+    },
+  };
+}
+
 function getInitialState() {
-  return (
-    loadState() ?? {
-      currentExperiment: defaultExperiment,
-      savedExperiments: seedSavedExperiments,
-      runState: {
-        status: 'idle',
-        elapsedTime: 0,
-      },
-    }
-  );
+  const defaults = getDefaults();
+  const stored = loadState();
+
+  if (!stored) {
+    return defaults;
+  }
+
+  return {
+    ...defaults,
+    ...stored,
+    currentExperiment: cloneExperiment(stored.currentExperiment ?? defaults.currentExperiment),
+    savedExperiments: (stored.savedExperiments ?? defaults.savedExperiments).map(cloneExperiment),
+    calibration: cloneCalibration(stored.calibration ?? defaults.calibration),
+    history: {
+      past: (stored.history?.past ?? []).map(cloneExperiment),
+      future: (stored.history?.future ?? []).map(cloneExperiment),
+    },
+    runState: {
+      ...defaults.runState,
+      ...stored.runState,
+    },
+  };
 }
 
 export function ExperimentProvider({ children }) {
   const [state, setState] = useLocalStorageState(getInitialState, saveState);
 
+  const withExperimentHistory = useCallback((previous, nextExperiment) => ({
+    ...previous,
+    currentExperiment: cloneExperiment(nextExperiment),
+    history: {
+      past: [...previous.history.past, cloneExperiment(previous.currentExperiment)].slice(-100),
+      future: [],
+    },
+  }), []);
+
   const updateExperiment = useCallback((patch) => {
-    setState((previous) => ({
-      ...previous,
-      currentExperiment: {
+    setState((previous) =>
+      withExperimentHistory(previous, {
         ...previous.currentExperiment,
         ...patch,
-      },
+        grid: patch.grid ?? previous.currentExperiment.grid,
+        motionTracks: patch.motionTracks ?? previous.currentExperiment.motionTracks,
+      }),
+    );
+  }, [setState, withExperimentHistory]);
+
+  const replaceExperiment = useCallback((patch) => {
+    setState((previous) => ({
+      ...previous,
+      currentExperiment: cloneExperiment({
+        ...previous.currentExperiment,
+        ...patch,
+        grid: patch.grid ?? previous.currentExperiment.grid,
+        motionTracks: patch.motionTracks ?? previous.currentExperiment.motionTracks,
+      }),
     }));
   }, [setState]);
 
@@ -36,22 +92,39 @@ export function ExperimentProvider({ children }) {
     updateExperiment({ grid: cloneGrid(grid) });
   }, [updateExperiment]);
 
-  const setMode = useCallback((mode) => {
-    updateExperiment({ mode });
-  }, [updateExperiment]);
-
   const saveCurrentExperiment = useCallback((name) => {
     setState((previous) => {
-      const experiment = previous.currentExperiment;
+      const experiment = cloneExperiment(previous.currentExperiment);
+      const existingIndex = previous.savedExperiments.findIndex((item) => item.id === experiment.id);
+      const baseName = name?.trim() || experiment.name || 'Saved Experiment';
+
+      if (existingIndex >= 0) {
+        const updatedEntry = {
+          ...experiment,
+          name: baseName,
+          savedAt: new Date().toISOString(),
+        };
+
+        const nextSaved = [...previous.savedExperiments];
+        nextSaved[existingIndex] = updatedEntry;
+
+        return {
+          ...previous,
+          currentExperiment: cloneExperiment(updatedEntry),
+          savedExperiments: nextSaved,
+        };
+      }
+
       const newEntry = {
         ...experiment,
         id: `saved-${Date.now()}`,
-        name: name || `${experiment.name} Copy`,
+        name: baseName,
         savedAt: new Date().toISOString(),
       };
       return {
         ...previous,
-        savedExperiments: [newEntry, ...previous.savedExperiments].slice(0, 12),
+        currentExperiment: cloneExperiment(newEntry),
+        savedExperiments: [newEntry, ...previous.savedExperiments].slice(0, 16),
       };
     });
   }, [setState]);
@@ -60,21 +133,25 @@ export function ExperimentProvider({ children }) {
     setState((previous) => {
       const selected = previous.savedExperiments.find((item) => item.id === experimentId);
       if (!selected) return previous;
-      return {
-        ...previous,
-        currentExperiment: {
-          ...previous.currentExperiment,
-          ...selected,
-          grid: cloneGrid(selected.grid),
-        },
-      };
+      return withExperimentHistory(previous, selected);
     });
-  }, [setState]);
+  }, [setState, withExperimentHistory]);
 
   const deleteSavedExperiment = useCallback((experimentId) => {
     setState((previous) => ({
       ...previous,
       savedExperiments: previous.savedExperiments.filter((item) => item.id !== experimentId),
+    }));
+  }, [setState]);
+
+  const updateCalibration = useCallback((patch) => {
+    setState((previous) => ({
+      ...previous,
+      calibration: cloneCalibration({
+        ...previous.calibration,
+        ...patch,
+        offsetGrid: patch.offsetGrid ?? previous.calibration.offsetGrid,
+      }),
     }));
   }, [setState]);
 
@@ -88,19 +165,78 @@ export function ExperimentProvider({ children }) {
     }));
   }, [setState]);
 
+  const undoExperiment = useCallback(() => {
+    setState((previous) => {
+      const last = previous.history.past.at(-1);
+      if (!last) return previous;
+      return {
+        ...previous,
+        currentExperiment: cloneExperiment(last),
+        history: {
+          past: previous.history.past.slice(0, -1),
+          future: [cloneExperiment(previous.currentExperiment), ...previous.history.future].slice(0, 100),
+        },
+      };
+    });
+  }, [setState]);
+
+  const redoExperiment = useCallback(() => {
+    setState((previous) => {
+      const next = previous.history.future[0];
+      if (!next) return previous;
+      return {
+        ...previous,
+        currentExperiment: cloneExperiment(next),
+        history: {
+          past: [...previous.history.past, cloneExperiment(previous.currentExperiment)].slice(-100),
+          future: previous.history.future.slice(1),
+        },
+      };
+    });
+  }, [setState]);
+
+  const recordHistorySnapshot = useCallback((experimentSnapshot) => {
+    setState((previous) => ({
+      ...previous,
+      history: {
+        past: [...previous.history.past, cloneExperiment(experimentSnapshot)].slice(-100),
+        future: [],
+      },
+    }));
+  }, [setState]);
+
   const value = useMemo(() => ({
-    state,
     currentExperiment: state.currentExperiment,
     savedExperiments: state.savedExperiments,
+    calibration: state.calibration,
     runState: state.runState,
+    canUndo: state.history.past.length > 0,
+    canRedo: state.history.future.length > 0,
     updateExperiment,
+    replaceExperiment,
     setGrid,
-    setMode,
     saveCurrentExperiment,
     loadSavedExperiment,
     deleteSavedExperiment,
+    updateCalibration,
     updateRunState,
-  }), [state, updateExperiment, setGrid, setMode, saveCurrentExperiment, loadSavedExperiment, deleteSavedExperiment, updateRunState]);
+    undoExperiment,
+    redoExperiment,
+    recordHistorySnapshot,
+  }), [
+    state,
+    updateExperiment,
+    replaceExperiment,
+    setGrid,
+    saveCurrentExperiment,
+    loadSavedExperiment,
+    deleteSavedExperiment,
+    updateCalibration,
+    updateRunState,
+    undoExperiment,
+    redoExperiment,
+    recordHistorySnapshot,
+  ]);
 
   return <ExperimentContext.Provider value={value}>{children}</ExperimentContext.Provider>;
 }

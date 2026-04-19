@@ -1,46 +1,149 @@
-import { Link, useNavigate } from 'react-router-dom';
-import SectionHeader from '../components/SectionHeader';
-import StatusCard from '../components/StatusCard';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import CalibrationModal from '../components/CalibrationModal';
+import ExperimentManagerModal from '../components/ExperimentManagerModal';
+import ExperimentPreview from '../components/ExperimentPreview';
 import { useExperiment } from '../context/ExperimentContext';
+import { applyMotionTracks } from '../utils/patterns';
 
 export default function Home() {
-  const navigate = useNavigate();
-  const { savedExperiments, loadSavedExperiment, currentExperiment } = useExperiment();
+  const {
+    currentExperiment,
+    savedExperiments,
+    calibration,
+    runState,
+    updateExperiment,
+    updateCalibration,
+    updateRunState,
+    loadSavedExperiment,
+    deleteSavedExperiment,
+  } = useExperiment();
+  const [frameTime, setFrameTime] = useState(0);
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [showExperimentManager, setShowExperimentManager] = useState(false);
+
+  useEffect(() => {
+    if (runState.status !== 'running') {
+      return undefined;
+    }
+
+    const start = performance.now() - runState.elapsedTime * 1000;
+    let raf;
+
+    const tick = (now) => {
+      const elapsed = (now - start) / 1000;
+      updateRunState({ elapsedTime: elapsed });
+      setFrameTime(elapsed);
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [runState.status, runState.elapsedTime, updateRunState]);
+
+  const cycleDuration = Math.max(
+    1,
+    ...currentExperiment.motionTracks.map((track) =>
+      Math.max(0, ...(track.points ?? []).map((point) => point.timeSec)),
+    ),
+  );
+  const cycleElapsed = cycleDuration > 0 ? runState.elapsedTime % cycleDuration : 0;
+  const progress = cycleDuration > 0 ? cycleElapsed / cycleDuration : 0;
+  const previewGrid = useMemo(
+    () => applyMotionTracks(
+      currentExperiment.grid,
+      runState.status === 'running' || runState.status === 'paused' ? currentExperiment.motionTracks : [],
+      frameTime,
+      currentExperiment.maxDisplacementMm,
+    ),
+    [currentExperiment, frameTime, runState.status],
+  );
 
   return (
-    <div className="page-stack">
-      <SectionHeader
-        title="Instrument Overview"
-        subtitle="Prototype operator console for a 4 × 16 programmable deformable wall in an oscillatory flume."
+    <div className="page-stack main-control-page">
+      <section className="panel sticky-runbar">
+        <div className="runbar-main">
+          <div className="current-experiment-card">
+            <p className="eyebrow">Experiment</p>
+            <h2>{currentExperiment.name}</h2>
+            <p className="muted-copy">
+              {currentExperiment.id.startsWith('saved-') ? 'Saved experiment loaded' : 'Unsaved working experiment'}
+            </p>
+            <div className="saved-actions">
+              <button className="secondary" onClick={() => setShowExperimentManager(true)}>Choose Experiment</button>
+              <Link to="/actuators" className="secondary-link">Edit</Link>
+            </div>
+          </div>
+          <div className="run-controls">
+            <button onClick={() => updateRunState({ status: 'running' })}>Run</button>
+            <button className="secondary" onClick={() => updateRunState({ status: 'paused' })}>Pause</button>
+            <button className="danger" onClick={() => updateRunState({ status: 'stopped', elapsedTime: 0 })}>Stop</button>
+            <button className="secondary" onClick={() => setShowCalibration(true)}>Calibration</button>
+            <Link to="/actuators" className="primary-link">Actuator Editor</Link>
+          </div>
+        </div>
+        <div className="progress-wrap">
+          <div className="progress-track">
+            <span style={{ width: `${progress * 100}%` }} />
+          </div>
+          <div className="progress-meta">
+            <strong>{runState.status}</strong>
+            <span>{cycleElapsed.toFixed(1)} s / {cycleDuration.toFixed(1)} s</span>
+          </div>
+        </div>
+      </section>
+
+      <div className="main-grid">
+        <section className="panel preview-panel">
+          <ExperimentPreview
+            title="Heatmap Preview"
+            grid={previewGrid}
+            maxValue={currentExperiment.maxDisplacementMm}
+            footer={
+              <div className="panel-footer stack-gap">
+                <p>Static wall shape comes from the actuator editor.</p>
+                <p>Saved motion tracks animate only the actuators they were assigned to.</p>
+              </div>
+            }
+          />
+        </section>
+
+        <section className="panel compact-status">
+          <h3>Run Status</h3>
+          <p><strong>Current:</strong> {currentExperiment.name}</p>
+          <p><strong>Motion Tracks:</strong> {currentExperiment.motionTracks.length}</p>
+          <p><strong>Playback:</strong> {runState.status}</p>
+          <p><strong>Calibration Offsets:</strong> active on {calibration.offsetGrid.flat().filter((value) => Math.abs(value) > 0.01).length} actuators</p>
+        </section>
+      </div>
+
+      <CalibrationModal
+        open={showCalibration}
+        offsetGrid={calibration.offsetGrid}
+        maxTrim={2}
+        midpoint={currentExperiment.maxDisplacementMm / 2}
+        onClose={() => setShowCalibration(false)}
+        onSave={(offsetGrid) => {
+          updateCalibration({ offsetGrid });
+          setShowCalibration(false);
+        }}
       />
 
-      <section className="status-grid">
-        <StatusCard label="Controller Link" value="Connected (Mock)" tone="ok" />
-        <StatusCard label="Actuator Power" value="Enabled (Mock)" tone="ok" />
-        <StatusCard label="Experiment Ready" value="Ready" tone="ok" />
-        <StatusCard label="Fault Status" value="No Faults" tone="neutral" />
-      </section>
-
-      <section className="panel action-row">
-        <Link to="/setup" className="primary-link">Go to Experiment Setup</Link>
-        <button className="secondary" onClick={() => navigate('/run')}>Run Last Experiment</button>
-        <p className="muted">Current mode: <strong>{currentExperiment.mode}</strong></p>
-      </section>
-
-      <section className="panel">
-        <h3>Recent Saved Experiments</h3>
-        <ul className="saved-list">
-          {savedExperiments.slice(0, 5).map((item) => (
-            <li key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <small>{item.selectedPreset} · {new Date(item.savedAt).toLocaleString()}</small>
-              </div>
-              <button className="secondary" onClick={() => loadSavedExperiment(item.id)}>Load</button>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ExperimentManagerModal
+        open={showExperimentManager}
+        currentExperiment={currentExperiment}
+        savedExperiments={savedExperiments}
+        onClose={() => setShowExperimentManager(false)}
+        onLoadSaved={(id) => {
+          loadSavedExperiment(id);
+          setShowExperimentManager(false);
+        }}
+        onDeleteSaved={deleteSavedExperiment}
+        onCreateNew={(experiment) => {
+          updateExperiment(experiment);
+          setShowExperimentManager(false);
+        }}
+      />
     </div>
   );
 }

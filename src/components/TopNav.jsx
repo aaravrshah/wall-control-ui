@@ -1,28 +1,20 @@
 import { NavLink } from 'react-router-dom';
-import ModeToggle from './ModeToggle';
 import { useExperiment } from '../context/ExperimentContext';
 
-const simpleLinks = [
-  { to: '/', label: 'Home' },
-  { to: '/setup', label: 'Experiment Setup' },
-  { to: '/run', label: 'Run' },
-];
-
-const advancedLinks = [
-  { to: '/pattern-editor', label: 'Pattern Editor' },
-  { to: '/sequencer', label: 'Sequencer' },
-  { to: '/diagnostics', label: 'Diagnostics' },
+const links = [
+  { to: '/', label: 'Main Control' },
+  { to: '/actuators', label: 'Actuator Editor' },
 ];
 
 export default function TopNav() {
   const { currentExperiment } = useExperiment();
-  const links = currentExperiment.mode === 'advanced' ? [...simpleLinks, ...advancedLinks] : simpleLinks;
 
   return (
     <header className="top-nav">
-      <div>
-        <p className="eyebrow">Oscillatory Flume Research Interface</p>
+      <div className="brand-block">
+        <p className="eyebrow">Oscillatory Flume Control</p>
         <h1>Programmable Deformable Wall</h1>
+        <p className="brand-copy">4 x 16 actuator control for displacement, oscillation, and timeline runs</p>
       </div>
       <nav>
         {links.map((link) => (
@@ -31,7 +23,9 @@ export default function TopNav() {
           </NavLink>
         ))}
       </nav>
-      <ModeToggle />
+      <div className="nav-status">
+        <span className="status-pill neutral">{currentExperiment.name}</span>
+      </div>
     </header>
   );
 }

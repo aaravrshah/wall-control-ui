@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'wall-control-prototype-v1';
+const STORAGE_KEY = 'wall-control-prototype-v3';
 
 export function loadState() {
   try {

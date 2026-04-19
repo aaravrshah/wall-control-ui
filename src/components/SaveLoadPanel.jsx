@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useExperiment } from '../context/ExperimentContext';
 import EmptyState from './EmptyState';
 
-export default function SaveLoadPanel() {
+export default function SaveLoadPanel({ title = 'Save / Load' }) {
   const { savedExperiments, saveCurrentExperiment, loadSavedExperiment, deleteSavedExperiment } = useExperiment();
   const [name, setName] = useState('');
 
   return (
-    <section className="panel">
-      <h3>Save / Load</h3>
+    <div className="save-load-panel">
+      {title ? <h3>{title}</h3> : null}
       <div className="save-row">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Experiment name" />
         <button
@@ -39,6 +39,6 @@ export default function SaveLoadPanel() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }

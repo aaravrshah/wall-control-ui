@@ -1,64 +1,134 @@
-import { PRESET_KEYS, generatePatternGrid } from '../utils/patterns';
+import { GRID_COLS, GRID_ROWS, createEmptyGrid, cloneGrid } from '../utils/grid';
 
-export const presetPatterns = [
-  { key: PRESET_KEYS.FLAT, name: 'Flat Wall', description: 'All nodes held at neutral baseline.' },
-  { key: PRESET_KEYS.GLOBAL_SINE, name: 'Global Sine', description: 'Uniform sinusoidal oscillation across entire wall.' },
-  { key: PRESET_KEYS.TRAVEL_DOWN, name: 'Traveling Wave Downstream', description: 'Phase-shifted wave propagating downstream.' },
-  { key: PRESET_KEYS.TRAVEL_UP, name: 'Traveling Wave Upstream', description: 'Phase-shifted wave propagating upstream.' },
-  { key: PRESET_KEYS.STANDING, name: 'Standing Wave', description: 'Interference pattern with alternating nodes/antinodes.' },
-  { key: PRESET_KEYS.PULSE, name: 'Single Pulse / Bump', description: 'Local pulse moving across wall extent.' },
-  { key: PRESET_KEYS.BANDS, name: 'Alternating Bands', description: 'Alternating high/low rows for roughness surrogate.' },
-  { key: PRESET_KEYS.ROUGHNESS, name: 'Random Roughness Snapshot', description: 'Pseudo-randomized roughness state for baseline testing.' },
-  { key: PRESET_KEYS.CUSTOM, name: 'Saved Custom Pattern', description: 'Apply a previously saved custom grid state.' },
-];
+function createCenterBumpGrid(fill = 3.5, maxValue = 6) {
+  const grid = createEmptyGrid(fill);
+  for (let row = 1; row <= 2; row += 1) {
+    for (let col = 5; col <= 10; col += 1) {
+      grid[row][col] = col === 7 || col === 8 ? maxValue : 4.8;
+    }
+  }
+  return grid;
+}
+
+function createRampGrid() {
+  return Array.from({ length: GRID_ROWS }, () =>
+    Array.from({ length: GRID_COLS }, (_, col) => Number(((col / (GRID_COLS - 1)) * 7).toFixed(2))),
+  );
+}
+
+function createCheckerGrid() {
+  return Array.from({ length: GRID_ROWS }, (_, row) =>
+    Array.from({ length: GRID_COLS }, (_, col) => ((row + col) % 2 === 0 ? 2 : 5)),
+  );
+}
+
+function clonePoints(points = []) {
+  return points.map((point) => ({
+    ...point,
+    interpolationToNext: point.interpolationToNext ?? 'linear',
+  }));
+}
+
+function cloneTrack(track) {
+  return {
+    ...track,
+    targetCellKeys: [...track.targetCellKeys],
+    points: clonePoints(track.points),
+  };
+}
+
+const neutralGrid = createEmptyGrid(3.5);
+const centerBumpGrid = createCenterBumpGrid();
+const leftRampGrid = createRampGrid();
+const checkerGrid = createCheckerGrid();
+
+export const defaultCalibration = {
+  offsetGrid: createEmptyGrid(0),
+};
 
 export const defaultExperiment = {
   id: 'current-experiment',
-  name: 'Baseline Global Sine',
-  mode: 'simple',
-  selectedPreset: PRESET_KEYS.GLOBAL_SINE,
-  amplitude: 0.6,
-  frequency: 0.8,
-  duration: 20,
-  direction: 'downstream',
-  repeatCount: 2,
-  activeRegion: 'full',
-  grid: generatePatternGrid(PRESET_KEYS.GLOBAL_SINE, { amplitude: 0.6, frequency: 0.8 }, 0),
-  sequence: [
-    { id: 'kf-1', label: 'Neutral', duration: 3, grid: generatePatternGrid(PRESET_KEYS.FLAT, {}, 0) },
-    { id: 'kf-2', label: 'Oscillation', duration: 4, grid: generatePatternGrid(PRESET_KEYS.GLOBAL_SINE, { amplitude: 0.8, frequency: 1.0 }, 0.2) },
-  ],
-  loopSequence: true,
-  sequenceRepeats: 3,
+  name: 'Baseline Flat',
+  grid: cloneGrid(neutralGrid),
+  motionTracks: [],
+  notes: '',
+  maxDisplacementMm: 7,
+  servoMaxDegrees: 60,
 };
 
 export const seedSavedExperiments = [
   {
     id: 'saved-1',
-    name: 'Sediment Mobilization Sweep',
+    name: 'Center Bump',
     savedAt: '2026-04-12T09:15:00.000Z',
-    selectedPreset: PRESET_KEYS.TRAVEL_DOWN,
-    amplitude: 0.7,
-    frequency: 1.1,
-    duration: 30,
-    direction: 'downstream',
-    repeatCount: 3,
-    activeRegion: 'full',
-    grid: generatePatternGrid(PRESET_KEYS.TRAVEL_DOWN, { amplitude: 0.7, frequency: 1.1 }, 0),
-    sequence: [],
-  },
-  {
-    id: 'saved-2',
-    name: 'Calibration Flat Hold',
-    savedAt: '2026-04-14T13:45:00.000Z',
-    selectedPreset: PRESET_KEYS.FLAT,
-    amplitude: 0.1,
-    frequency: 0.2,
-    duration: 15,
-    direction: 'none',
-    repeatCount: 1,
-    activeRegion: 'full',
-    grid: generatePatternGrid(PRESET_KEYS.FLAT, {}, 0),
-    sequence: [],
+    grid: cloneGrid(centerBumpGrid),
+    motionTracks: [],
+    notes: '',
+    maxDisplacementMm: 7,
+    servoMaxDegrees: 60,
   },
 ];
+
+export const starterShapes = [
+  { id: 'flat', name: 'Flat', grid: cloneGrid(neutralGrid) },
+  { id: 'center-bump', name: 'Center Bump', grid: cloneGrid(centerBumpGrid) },
+  { id: 'left-ramp', name: 'Left to Right Ramp', grid: cloneGrid(leftRampGrid) },
+  { id: 'checker', name: 'Alternating Pattern', grid: cloneGrid(checkerGrid) },
+];
+
+export const suggestedExperiments = [
+  {
+    id: 'suggested-flat',
+    name: 'Flat Hold',
+    experiment: {
+      ...defaultExperiment,
+      name: 'Flat Hold',
+      grid: cloneGrid(neutralGrid),
+    },
+  },
+  {
+    id: 'suggested-bump',
+    name: 'Center Bump Hold',
+    experiment: {
+      ...defaultExperiment,
+      name: 'Center Bump Hold',
+      grid: cloneGrid(centerBumpGrid),
+    },
+  },
+  {
+    id: 'suggested-wave',
+    name: 'Traveling Bump',
+    experiment: {
+      ...defaultExperiment,
+      name: 'Traveling Bump',
+      grid: cloneGrid(neutralGrid),
+      motionTracks: [
+        cloneTrack({
+          id: 'track-1',
+          name: 'Center Cells',
+          targetCellKeys: ['1-7', '1-8', '2-7', '2-8'],
+          points: [
+            { id: 'pt-1', timeSec: 0, displacement: 3.5, interpolationToNext: 'sine' },
+            { id: 'pt-2', timeSec: 3, displacement: 6.2, interpolationToNext: 'sine' },
+            { id: 'pt-3', timeSec: 6, displacement: 3.5, interpolationToNext: 'linear' },
+          ],
+        }),
+      ],
+    },
+  },
+];
+
+export function cloneExperiment(experiment) {
+  return {
+    ...experiment,
+    grid: cloneGrid(experiment.grid),
+    motionTracks: (experiment.motionTracks ?? []).map(cloneTrack),
+  };
+}
+
+export function cloneCalibration(calibration) {
+  return {
+    ...calibration,
+    offsetGrid: cloneGrid(calibration.offsetGrid),
+  };
+}
