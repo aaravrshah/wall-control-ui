@@ -863,6 +863,15 @@ textarea {
   color: #304e60;
 }
 
+.hardware-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.hardware-panel h3 {
+  margin: 0;
+}
+
 .new-experiment-row {
   display: flex;
   gap: 0.7rem;

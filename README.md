@@ -2,7 +2,7 @@
 
 A frontend-first React + Vite prototype for operating a **4 × 16 programmable deformable wall** used in oscillatory flume experiments.
 
-This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It uses **mock-only data** and is structured so hardware communication can be added later.
+This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It now includes a browser-side serial link for sending Arduino servo commands from the main control page.
 
 ## What this prototype includes
 
@@ -41,12 +41,27 @@ npm run preview
 ## Current scope and intentional exclusions
 
 This v1 prototype **does not** include:
-- Arduino/serial connection
 - WebSocket/backend APIs
 - Real actuator telemetry
 - Real-time fault handling logic
 
-All status values and runtime behavior are simulated for UX and state-flow validation.
+Wall-state previews remain simulated in the UI, but the Home page can now send `channel:angle` serial commands to a connected Arduino over the Web Serial API.
+
+## Arduino hookup
+
+The main control page now includes an **Arduino Link** panel that can:
+
+- Request a serial connection to the Arduino from the browser
+- Send one-off `channel:angle` jog commands
+- Stream the current wall preview while a run is active
+- Map any contiguous slice of the 4 x 16 wall grid onto Arduino channel numbers
+
+Important setup notes:
+
+- Use a Chromium-based browser that supports the Web Serial API, such as Chrome or Edge.
+- Run the app from `localhost` or another secure context.
+- Match the baud rate to the Arduino sketch. The provided sketch uses `9600`.
+- The included `arduino_wall_controller.ino` sketch drives four PCA9685 boards, so the default UI mapping now sends all `64` wall cells to Arduino channels `0-63`.
 
 ## Folder structure
 

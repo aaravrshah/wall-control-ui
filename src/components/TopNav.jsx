@@ -7,7 +7,8 @@ const links = [
 ];
 
 export default function TopNav() {
-  const { currentExperiment } = useExperiment();
+  const { currentExperiment, hardwareState } = useExperiment();
+  const connected = hardwareState.status === 'connected';
 
   return (
     <header className="top-nav">
@@ -25,6 +26,9 @@ export default function TopNav() {
       </nav>
       <div className="nav-status">
         <span className="status-pill neutral">{currentExperiment.name}</span>
+        <span className={`status-pill ${connected ? 'online' : 'neutral'}`}>
+          {connected ? 'Arduino Connected' : 'Arduino Offline'}
+        </span>
       </div>
     </header>
   );
