@@ -79,6 +79,21 @@ function resolveTrackForSelection(tracks, selectedCells, selectedDisplacement) {
     return { mode: 'single', track: exactTrack };
   }
 
+  const containingTracks = tracks.filter((track) => {
+    const trackSet = new Set(track.targetCellKeys);
+    for (const key of selectionSet) {
+      if (!trackSet.has(key)) return false;
+    }
+    return true;
+  });
+
+  if (containingTracks.length > 0) {
+    const mostSpecificTrack = [...containingTracks].sort(
+      (left, right) => left.targetCellKeys.length - right.targetCellKeys.length,
+    )[0];
+    return { mode: 'linked', track: mostSpecificTrack };
+  }
+
   return {
     mode: 'default',
     track: createDefaultHoldTrack(selectionSet, selectedDisplacement),
@@ -301,6 +316,12 @@ export default function ExperimentSetup() {
 
             {activeTrack ? (
               <>
+                {selectionTrackState.mode === 'linked' ? (
+                  <div className="callout subtle">
+                    This actuator is part of a shared timeline. Edits here update the full target group for that track.
+                  </div>
+                ) : null}
+
                 <div className="two-input-grid">
                   <label>
                     Track Name

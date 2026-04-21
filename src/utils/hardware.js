@@ -3,6 +3,12 @@ import { clamp, GRID_COLS, GRID_ROWS } from './grid';
 export const DEFAULT_SERIAL_BAUD_RATE = 9600;
 export const DEFAULT_CENTER_ANGLE = 90;
 export const DEFAULT_CHANNEL_COUNT = GRID_ROWS * GRID_COLS;
+export const PHYSICAL_SERVO_INDEX_BY_CELL = [
+  [31, 23, 30, 22, 29, 26, 28, 20, 27, 21, 19, 18, 25, 17, 24, 16],
+  [15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0],
+  [55, 63, 54, 62, 53, 61, 52, 60, 51, 59, 50, 58, 49, 57, 48, 56],
+  [39, 47, 38, 46, 37, 45, 36, 44, 35, 43, 34, 42, 33, 41, 32, 40],
+];
 
 export function flattenCellIndex(row, col) {
   return row * GRID_COLS + col;
@@ -17,6 +23,10 @@ export function flatIndexToCell(index) {
 
 export function formatCellLabel(row, col) {
   return `R${row + 1}-C${col + 1}`;
+}
+
+export function getPhysicalServoIndex(row, col) {
+  return PHYSICAL_SERVO_INDEX_BY_CELL[row]?.[col] ?? flattenCellIndex(row, col);
 }
 
 export function displacementMmToServoAngle(
@@ -56,9 +66,10 @@ export function buildGridServoCommands(
     const { row, col } = flatIndexToCell(flatIndex);
     const displacement = grid[row]?.[col] ?? 0;
     const trim = offsetGrid?.[row]?.[col] ?? 0;
+    const physicalServoIndex = getPhysicalServoIndex(row, col);
 
     commands.push({
-      channel: channelStart + index,
+      channel: channelStart + physicalServoIndex,
       angle: displacementMmToServoAngle(displacement, {
         maxDisplacementMm,
         servoMaxDegrees,
@@ -67,6 +78,7 @@ export function buildGridServoCommands(
       row,
       col,
       label: formatCellLabel(row, col),
+      servoNumber: physicalServoIndex + 1,
       displacement,
       trim,
     });
