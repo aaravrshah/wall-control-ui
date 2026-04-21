@@ -53,7 +53,7 @@ export const defaultExperiment = {
   motionTracks: [],
   notes: '',
   maxDisplacementMm: 7,
-  servoMaxDegrees: 60,
+  servoMaxDegrees: 20,
 };
 
 export const seedSavedExperiments = [
@@ -65,7 +65,7 @@ export const seedSavedExperiments = [
     motionTracks: [],
     notes: '',
     maxDisplacementMm: 7,
-    servoMaxDegrees: 60,
+    servoMaxDegrees: 20,
   },
 ];
 

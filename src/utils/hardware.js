@@ -3,6 +3,9 @@ import { clamp, GRID_COLS, GRID_ROWS } from './grid';
 export const DEFAULT_SERIAL_BAUD_RATE = 9600;
 export const DEFAULT_CENTER_ANGLE = 90;
 export const DEFAULT_CHANNEL_COUNT = GRID_ROWS * GRID_COLS;
+// Physical tuning: cap commanded range so 0-7mm doesn't overdrive the servos,
+// even if an older saved experiment still has a larger servoMaxDegrees value.
+export const MAX_SERVO_RANGE_DEG = 20;
 export const PHYSICAL_SERVO_INDEX_BY_CELL = [
   [31, 23, 30, 22, 29, 26, 28, 20, 27, 21, 19, 18, 25, 17, 24, 16],
   [15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0],
@@ -42,7 +45,10 @@ export function displacementMmToServoAngle(
   const midpoint = safeMax / 2;
   const calibratedDisplacement = clamp(displacementMm + calibrationOffsetMm, 0, safeMax);
   const normalizedOffset = (calibratedDisplacement - midpoint) / Math.max(0.001, midpoint);
-  return Math.round(clamp(centerAngle + normalizedOffset * servoMaxDegrees, 0, 180));
+  const effectiveServoMax = Math.min(MAX_SERVO_RANGE_DEG, Math.abs(servoMaxDegrees || 0));
+  // Invert mapping so higher commanded displacement moves in the opposite servo direction.
+  // This matches the physical installation where "poke up" is the negative direction.
+  return Math.round(clamp(centerAngle - normalizedOffset * effectiveServoMax, 0, 180));
 }
 
 export function buildGridServoCommands(
