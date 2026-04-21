@@ -23,6 +23,20 @@ const float baseCenter = (SERVOMIN + SERVOMAX) / 2.0;
 const float ticksPerDegree = (SERVOMAX - SERVOMIN) / 180.0;
 const int UNCLAMPED_CENTER_SERVO_INDEX = 10;  // Servo 11 in 1-based numbering.
 
+// Direction mapping by PCA9685 board:
+// - On 0x42 and 0x43: CCW rotation should mean positive displacement (up).
+// - On 0x40 and 0x41: CW  rotation should mean positive displacement (up).
+//
+// In this sketch, a positive "displacement angle" means "upwards into the flume".
+// We convert that into the servo's native PWM direction using this factor.
+// boardIndex: 0 -> 0x40, 1 -> 0x41, 2 -> 0x42, 3 -> 0x43
+const int DISPLACEMENT_SIGN_BY_BOARD[BOARD_COUNT] = {
+  -1,  // 0x40 (CW positive)
+  -1,  // 0x41 (CW positive)
+  +1,  // 0x42 (CCW positive)
+  +1,  // 0x43 (CCW positive)
+};
+
 // Per-servo calibration offsets in degrees, indexed by global servo number - 1.
 const float centerOffsetDegrees[TOTAL_SERVOS] = {
   10, 10, 0, 0, 0, -3, 5, 15, 10, 5, 85, -6, 13, 0, 12, 10,
@@ -52,13 +66,25 @@ void setServoPulseTicks(int servoIndex, int pwmValue) {
   pwmBoards[boardIndex].setPWM(boardChannel, 0, pwmValue);
 }
 
+float applyBoardDirection(int servoIndex, float displacementAngleDeg) {
+  int boardIndex = servoIndexToBoard(servoIndex);
+  int factor = 1;
+  if (boardIndex >= 0 && boardIndex < BOARD_COUNT) {
+    factor = DISPLACEMENT_SIGN_BY_BOARD[boardIndex];
+  }
+  return displacementAngleDeg * (float)factor;
+}
+
 void moveServoRelative(int servoIndex, float angleDeg) {
   if (!isValidServoIndex(servoIndex)) {
     Serial.println("Servo index out of range.");
     return;
   }
 
-  float pwmValue = centers[servoIndex] + angleDeg * ticksPerDegree;
+  // Interpret the incoming angle as a "displacement angle" (positive = up),
+  // then convert to native servo direction based on which board it's on.
+  float signedAngleDeg = applyBoardDirection(servoIndex, angleDeg);
+  float pwmValue = centers[servoIndex] + signedAngleDeg * ticksPerDegree;
 
   if (servoIndex != UNCLAMPED_CENTER_SERVO_INDEX) {
     if (pwmValue < SERVOMIN) pwmValue = SERVOMIN;
@@ -181,8 +207,8 @@ bool handleUiCommand(String line) {
     return true;
   }
 
-  float relativeAngle = absoluteAngle - 90.0;
-  moveServoRelative(channel, relativeAngle);
+  float displacementAngle = absoluteAngle - 90.0;
+  moveServoRelative(channel, displacementAngle);
 
   Serial.print("ok:");
   Serial.print(channel);
@@ -263,6 +289,7 @@ bool handleManualServoCommand(String line) {
     return true;
   }
 
+  // Manual command uses the same convention: positive = up.
   moveServoRelative(servoNum - 1, angleDeg);
   return true;
 }

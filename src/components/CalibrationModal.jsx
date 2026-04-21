@@ -22,7 +22,7 @@ export default function CalibrationModal({
   onSave,
   offsetGrid,
   maxTrim = 2,
-  midpoint = 3.5,
+  midpoint = 0,
 }) {
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectedCells, setSelectedCells] = useState(new Set(['0-0']));
@@ -137,7 +137,7 @@ export default function CalibrationModal({
           />
         </label>
         <div className="callout subtle">
-          Midpoint flat reference is currently {midpoint.toFixed(1)} mm. Trim values are added behind the
+          Zero flat reference is currently {midpoint.toFixed(1)} mm. Trim values are added behind the
           scenes when converting logical displacement to physical servo commands.
         </div>
         <div className="saved-actions">

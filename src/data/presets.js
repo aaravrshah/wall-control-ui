@@ -1,6 +1,6 @@
 import { GRID_COLS, GRID_ROWS, createEmptyGrid, cloneGrid } from '../utils/grid';
 
-function createCenterBumpGrid(fill = 3.5, maxValue = 6) {
+function createCenterBumpGrid(fill = 0, maxValue = 6) {
   const grid = createEmptyGrid(fill);
   for (let row = 1; row <= 2; row += 1) {
     for (let col = 5; col <= 10; col += 1) {
@@ -37,7 +37,7 @@ function cloneTrack(track) {
   };
 }
 
-const neutralGrid = createEmptyGrid(3.5);
+const neutralGrid = createEmptyGrid(0);
 const centerBumpGrid = createCenterBumpGrid();
 const leftRampGrid = createRampGrid();
 const checkerGrid = createCheckerGrid();

@@ -18,7 +18,7 @@ export default function TopNav() {
   } = useExperiment();
   const connected = hardwareState.status === 'connected';
 
-  const pulseRow = async (rowIndex, highAngle = 120, lowAngle = 90) => {
+  const pulseRow = async (rowIndex, highAngle = 100, lowAngle = 90) => {
     if (!connected) return;
     const baseChannel = hardwareState.config.channelStart ?? 0;
 
@@ -101,7 +101,13 @@ export default function TopNav() {
             <div className="saved-actions">
               <button
                 className="secondary"
-                onClick={() => Promise.all(Array.from({ length: 64 }, (_, channel) => sendServoCommand((hardwareState.config.channelStart ?? 0) + channel, 90)))}
+                onClick={async () => {
+                  const baseChannel = hardwareState.config.channelStart ?? 0;
+                  for (let channel = 0; channel < 64; channel += 1) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await sendServoCommand(baseChannel + channel, 90);
+                  }
+                }}
                 disabled={!connected}
               >
                 Send All to 90

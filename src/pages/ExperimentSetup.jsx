@@ -279,7 +279,7 @@ export default function ExperimentSetup() {
             </label>
 
             <div className="saved-actions">
-              <button className="secondary" onClick={() => setGrid(createEmptyGrid(currentExperiment.maxDisplacementMm / 2))}>Reset All to Midpoint</button>
+              <button className="secondary" onClick={() => setGrid(createEmptyGrid(currentExperiment.maxDisplacementMm / 2))}>Reset All to Half Travel</button>
               <button className="secondary" onClick={() => setGrid(createEmptyGrid(0))}>Reset All to 0 mm</button>
               <button className="secondary" onClick={() => setGrid(smoothGrid(grid, currentExperiment.maxDisplacementMm).map((row) => row.map((value) => Number(value.toFixed(2)))))}>
                 Smooth

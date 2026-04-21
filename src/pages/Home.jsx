@@ -24,6 +24,7 @@ export default function Home() {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showExperimentManager, setShowExperimentManager] = useState(false);
   const latestPreviewGridRef = useRef(null);
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (runState.status !== 'running') {
@@ -72,12 +73,32 @@ export default function Home() {
       return undefined;
     }
 
-    // Stream the current frame to hardware while a run is active.
-    const timer = window.setInterval(() => {
-      sendGridToHardware(latestPreviewGridRef.current);
-    }, 100);
+    let cancelled = false;
 
-    return () => window.clearInterval(timer);
+    const streamFrame = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (!sendInFlightRef.current) {
+        sendInFlightRef.current = true;
+        try {
+          await sendGridToHardware(latestPreviewGridRef.current);
+        } finally {
+          sendInFlightRef.current = false;
+        }
+      }
+
+      if (!cancelled) {
+        window.setTimeout(streamFrame, 450);
+      }
+    };
+
+    streamFrame();
+    return () => {
+      cancelled = true;
+      sendInFlightRef.current = false;
+    };
   }, [hardwareState.status, runState.status, sendGridToHardware]);
 
   return (
@@ -142,7 +163,7 @@ export default function Home() {
         open={showCalibration}
         offsetGrid={calibration.offsetGrid}
         maxTrim={2}
-        midpoint={currentExperiment.maxDisplacementMm / 2}
+        midpoint={0}
         onClose={() => setShowCalibration(false)}
         onSave={(offsetGrid) => {
           updateCalibration({ offsetGrid });

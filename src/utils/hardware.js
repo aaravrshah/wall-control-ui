@@ -3,9 +3,11 @@ import { clamp, GRID_COLS, GRID_ROWS } from './grid';
 export const DEFAULT_SERIAL_BAUD_RATE = 9600;
 export const DEFAULT_CENTER_ANGLE = 90;
 export const DEFAULT_CHANNEL_COUNT = GRID_ROWS * GRID_COLS;
-// Physical tuning: cap commanded range so 0-7mm doesn't overdrive the servos,
-// even if an older saved experiment still has a larger servoMaxDegrees value.
-export const MAX_SERVO_RANGE_DEG = 20;
+// Linkage model (can be adjusted later):
+// Approximate actuator displacement as arc-length on the servo horn: s = r * theta.
+// With r = 15mm, a +/-3.5mm swing is about +/-13.4 degrees.
+export const SERVO_HORN_RADIUS_MM = 15;
+export const INVERT_DISPLACEMENT_DIRECTION = false;
 export const PHYSICAL_SERVO_INDEX_BY_CELL = [
   [31, 23, 30, 22, 29, 26, 28, 20, 27, 21, 19, 18, 25, 17, 24, 16],
   [15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0],
@@ -36,19 +38,21 @@ export function displacementMmToServoAngle(
   displacementMm,
   {
     maxDisplacementMm,
-    servoMaxDegrees = 60,
     calibrationOffsetMm = 0,
     centerAngle = DEFAULT_CENTER_ANGLE,
   },
 ) {
   const safeMax = Math.max(0.001, maxDisplacementMm);
-  const midpoint = safeMax / 2;
-  const calibratedDisplacement = clamp(displacementMm + calibrationOffsetMm, 0, safeMax);
-  const normalizedOffset = (calibratedDisplacement - midpoint) / Math.max(0.001, midpoint);
-  const effectiveServoMax = Math.min(MAX_SERVO_RANGE_DEG, Math.abs(servoMaxDegrees || 0));
-  // Invert mapping so higher commanded displacement moves in the opposite servo direction.
-  // This matches the physical installation where "poke up" is the negative direction.
-  return Math.round(clamp(centerAngle - normalizedOffset * effectiveServoMax, 0, 180));
+  // Zero reference: 0mm should map to the calibrated center position (90 degrees).
+  // Positive displacement moves "up" from that zero plane.
+  // Calibration offset shifts the physical zero reference per actuator (in mm).
+  const calibratedDisplacement = clamp(displacementMm + calibrationOffsetMm, -safeMax, safeMax);
+
+  const safeHornRadius = Math.max(0.001, SERVO_HORN_RADIUS_MM);
+  const angleOffsetDeg = (calibratedDisplacement / safeHornRadius) * (180 / Math.PI);
+  const signedOffset = INVERT_DISPLACEMENT_DIRECTION ? -angleOffsetDeg : angleOffsetDeg;
+
+  return Math.round(clamp(centerAngle + signedOffset, 0, 180));
 }
 
 export function buildGridServoCommands(
