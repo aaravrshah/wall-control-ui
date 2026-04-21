@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CalibrationModal from '../components/CalibrationModal';
 import ExperimentManagerModal from '../components/ExperimentManagerModal';
@@ -17,10 +17,13 @@ export default function Home() {
     updateRunState,
     loadSavedExperiment,
     deleteSavedExperiment,
+    hardwareState,
+    sendGridToHardware,
   } = useExperiment();
   const [frameTime, setFrameTime] = useState(0);
   const [showCalibration, setShowCalibration] = useState(false);
   const [showExperimentManager, setShowExperimentManager] = useState(false);
+  const latestPreviewGridRef = useRef(null);
 
   useEffect(() => {
     if (runState.status !== 'running') {
@@ -62,6 +65,20 @@ export default function Home() {
     ),
     [currentExperiment, playbackTime, runState.status],
   );
+  latestPreviewGridRef.current = previewGrid;
+
+  useEffect(() => {
+    if (runState.status !== 'running' || hardwareState.status !== 'connected') {
+      return undefined;
+    }
+
+    // Stream the current frame to hardware while a run is active.
+    const timer = window.setInterval(() => {
+      sendGridToHardware(latestPreviewGridRef.current);
+    }, 100);
+
+    return () => window.clearInterval(timer);
+  }, [hardwareState.status, runState.status, sendGridToHardware]);
 
   return (
     <div className="page-stack main-control-page">
