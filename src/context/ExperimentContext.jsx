@@ -355,7 +355,6 @@ export function ExperimentProvider({ children }) {
     const commands = buildGridServoCommands(grid, {
       offsetGrid: options.offsetGrid ?? state.calibration.offsetGrid,
       maxDisplacementMm: options.maxDisplacementMm ?? state.currentExperiment.maxDisplacementMm,
-      servoMaxDegrees: options.servoMaxDegrees ?? state.currentExperiment.servoMaxDegrees,
       cellStartIndex: options.cellStartIndex ?? hardwareState.config.cellStartIndex,
       channelStart: options.channelStart ?? hardwareState.config.channelStart,
       channelCount: options.channelCount ?? hardwareState.config.channelCount,
@@ -378,7 +377,7 @@ export function ExperimentProvider({ children }) {
     }));
 
     return true;
-  }, [hardwareState.config.cellStartIndex, hardwareState.config.channelCount, hardwareState.config.channelStart, sendServoCommand, state.calibration.offsetGrid, state.currentExperiment.maxDisplacementMm, state.currentExperiment.servoMaxDegrees]);
+  }, [hardwareState.config.cellStartIndex, hardwareState.config.channelCount, hardwareState.config.channelStart, sendServoCommand, state.calibration.offsetGrid, state.currentExperiment.maxDisplacementMm]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serial' in navigator)) {

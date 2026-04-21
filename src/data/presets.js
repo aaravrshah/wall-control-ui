@@ -108,9 +108,9 @@ export const suggestedExperiments = [
           name: 'Center Cells',
           targetCellKeys: ['1-7', '1-8', '2-7', '2-8'],
           points: [
-            { id: 'pt-1', timeSec: 0, displacement: 3.5, interpolationToNext: 'sine' },
+            { id: 'pt-1', timeSec: 0, displacement: 0, interpolationToNext: 'sine' },
             { id: 'pt-2', timeSec: 3, displacement: 6.2, interpolationToNext: 'sine' },
-            { id: 'pt-3', timeSec: 6, displacement: 3.5, interpolationToNext: 'linear' },
+            { id: 'pt-3', timeSec: 6, displacement: 0, interpolationToNext: 'linear' },
           ],
         }),
       ],

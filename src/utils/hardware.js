@@ -5,8 +5,8 @@ export const DEFAULT_CENTER_ANGLE = 90;
 export const DEFAULT_CHANNEL_COUNT = GRID_ROWS * GRID_COLS;
 // Linkage model (can be adjusted later):
 // Approximate actuator displacement as arc-length on the servo horn: s = r * theta.
-// With r = 15mm, a +/-3.5mm swing is about +/-13.4 degrees.
-export const SERVO_HORN_RADIUS_MM = 15;
+// With r = 14.2mm, a +7mm displacement is about +28.3 degrees from center.
+export const SERVO_HORN_RADIUS_MM = 14.2;
 export const INVERT_DISPLACEMENT_DIRECTION = false;
 export const PHYSICAL_SERVO_INDEX_BY_CELL = [
   [31, 23, 30, 22, 29, 26, 28, 20, 27, 21, 19, 18, 25, 17, 24, 16],
@@ -60,7 +60,6 @@ export function buildGridServoCommands(
   {
     offsetGrid,
     maxDisplacementMm,
-    servoMaxDegrees,
     cellStartIndex = 0,
     channelStart = 0,
     channelCount = DEFAULT_CHANNEL_COUNT,
@@ -82,7 +81,6 @@ export function buildGridServoCommands(
       channel: channelStart + physicalServoIndex,
       angle: displacementMmToServoAngle(displacement, {
         maxDisplacementMm,
-        servoMaxDegrees,
         calibrationOffsetMm: trim,
       }),
       row,
