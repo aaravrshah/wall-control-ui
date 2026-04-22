@@ -39,7 +39,7 @@ const int DISPLACEMENT_SIGN_BY_BOARD[BOARD_COUNT] = {
 
 // Per-servo calibration offsets in degrees, indexed by global servo number - 1.
 const float centerOffsetDegrees[TOTAL_SERVOS] = {
-  10, 10, 0, 0, 0, -3, 5, 15, 10, 5, 85, -6, 13, 0, 12, 10,
+  10, 10, 0, 0, 0, -3, 5, 15, 10, 5, -85, -6, 13, 0, 12, 10,
   0, 5, -25, -30, -5, -30, 0, 0, -8, 8, -30, 0, 8, 0, -3, 6,
   -5, -12, -5, -2, -2, -15, -5, -5, -5, 12, -5, 10, 21, -3, -2, -15,
   15, 10, 5, 3, 5, -10, 7, -2, 5, 10, 3, 20, 5, 5, 15, 20
