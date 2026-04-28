@@ -1,8 +1,8 @@
 import { GRID_COLS, GRID_ROWS, clamp } from './grid';
 
-export const DEFAULT_SERIAL_BAUD_RATE = 9600;
+export const DEFAULT_SERIAL_BAUD_RATE = 115200;
 export const FRAME_MAX_DISPLACEMENT_DEGREES = 28;
-export const DEFAULT_FRAME_INTERVAL_MS = 700;
+export const DEFAULT_FRAME_INTERVAL_MS = 70;
 export const SUPPORTED_PATTERN_COMMANDS = ['flat', 'sine', 'diag', 'uiuc'];
 
 function formatFrameValue(value) {

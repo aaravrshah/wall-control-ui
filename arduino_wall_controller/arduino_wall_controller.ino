@@ -18,7 +18,7 @@ const int GRID_COLS = 16;
 #define SERVOMAX   512
 #define SERVO_FREQ 50
 
-const long SERIAL_BAUD_RATE = 9600;
+const long SERIAL_BAUD_RATE = 115200;
 
 const float WAVE_FREQ_HZ = 1.0;
 const float WAVE_AMPLITUDE_DEGREES = 28.0;

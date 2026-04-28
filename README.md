@@ -60,7 +60,7 @@ Important setup notes:
 
 - Use a Chromium-based browser that supports the Web Serial API, such as Chrome or Edge.
 - Run the app from `localhost` or another secure context.
-- Match the baud rate to the Arduino sketch. The provided sketch uses `9600`.
+- Match the baud rate to the Arduino sketch. The provided sketch uses `115200`.
 - The included `arduino_wall_controller.ino` sketch is based on `arduino_demo_patterns.ino`: it owns calibrated centers, board direction signs, physical row/column mapping, and PWM clamps.
 - The UI no longer sends raw servo angles. It sends positive displacement degrees only, and the Arduino clamps every command to `0..28` degrees before converting to PCA9685 ticks.
 
