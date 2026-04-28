@@ -10,9 +10,9 @@ import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import { loadState, saveState } from '../utils/storage';
 import { cloneGrid } from '../utils/grid';
 import {
-  buildGridServoCommands,
-  DEFAULT_CHANNEL_COUNT,
+  buildGridFrameCommand,
   DEFAULT_SERIAL_BAUD_RATE,
+  normalizePatternCommand,
 } from '../utils/hardware';
 
 const ExperimentContext = createContext(null);
@@ -68,9 +68,6 @@ export function ExperimentProvider({ children }) {
     lastCommandSummary: 'No commands sent yet.',
     config: {
       baudRate: DEFAULT_SERIAL_BAUD_RATE,
-      cellStartIndex: 0,
-      channelStart: 0,
-      channelCount: DEFAULT_CHANNEL_COUNT,
     },
   });
   const portRef = useRef(null);
@@ -278,6 +275,7 @@ export function ExperimentProvider({ children }) {
       await port.open({ baudRate: hardwareState.config.baudRate });
       const writer = port.writable.getWriter();
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      await writer.write(new TextEncoder().encode('flat\n'));
 
       portRef.current = port;
       writerRef.current = writer;
@@ -286,7 +284,7 @@ export function ExperimentProvider({ children }) {
         ...previous,
         status: 'connected',
         error: '',
-        lastCommandSummary: `Connected at ${previous.config.baudRate} baud.`,
+        lastCommandSummary: `Connected at ${previous.config.baudRate} baud and sent flat.`,
       }));
       return true;
     } catch (error) {
@@ -342,42 +340,21 @@ export function ExperimentProvider({ children }) {
     }
   }, []);
 
-  const sendServoCommand = useCallback(async (channel, angle) => {
-    const safeChannel = Math.max(0, Number(channel) || 0);
-    const safeAngle = Math.max(0, Math.min(180, Math.round(Number(angle) || 0)));
-    return sendRawCommand(
-      `${safeChannel}:${safeAngle}\n`,
-      `Sent channel ${safeChannel} to ${safeAngle} degrees.`,
-    );
+  const sendPatternCommand = useCallback(async (pattern) => {
+    const safePattern = normalizePatternCommand(pattern);
+    return sendRawCommand(`${safePattern}\n`, `Sent ${safePattern} pattern command.`);
   }, [sendRawCommand]);
 
   const sendGridToHardware = useCallback(async (grid, options = {}) => {
-    const commands = buildGridServoCommands(grid, {
-      offsetGrid: options.offsetGrid ?? state.calibration.offsetGrid,
+    const frame = buildGridFrameCommand(grid, {
       maxDisplacementMm: options.maxDisplacementMm ?? state.currentExperiment.maxDisplacementMm,
-      cellStartIndex: options.cellStartIndex ?? hardwareState.config.cellStartIndex,
-      channelStart: options.channelStart ?? hardwareState.config.channelStart,
-      channelCount: options.channelCount ?? hardwareState.config.channelCount,
     });
 
-    if (commands.length === 0) {
-      return false;
-    }
-
-    for (const command of commands) {
-      const sent = await sendServoCommand(command.channel, command.angle);
-      if (!sent) {
-        return false;
-      }
-    }
-
-    setHardwareState((previous) => ({
-      ...previous,
-      lastCommandSummary: `Sent ${commands.length} actuator commands (${commands[0].label} to ${commands.at(-1).label}).`,
-    }));
-
-    return true;
-  }, [hardwareState.config.cellStartIndex, hardwareState.config.channelCount, hardwareState.config.channelStart, sendServoCommand, state.calibration.offsetGrid, state.currentExperiment.maxDisplacementMm]);
+    return sendRawCommand(
+      frame.command,
+      `Sent ${frame.valueCount} positive displacement values, clamped 0-${frame.maxDegrees} deg.`,
+    );
+  }, [sendRawCommand, state.currentExperiment.maxDisplacementMm]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serial' in navigator)) {
@@ -430,7 +407,7 @@ export function ExperimentProvider({ children }) {
     updateHardwareConfig,
     connectHardware,
     disconnectHardware,
-    sendServoCommand,
+    sendPatternCommand,
     sendGridToHardware,
   }), [
     state,
@@ -449,7 +426,7 @@ export function ExperimentProvider({ children }) {
     updateHardwareConfig,
     connectHardware,
     disconnectHardware,
-    sendServoCommand,
+    sendPatternCommand,
     sendGridToHardware,
   ]);
 

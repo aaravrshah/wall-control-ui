@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useExperiment } from '../context/ExperimentContext';
-import { getPhysicalServoIndex } from '../utils/hardware';
+import { createEmptyGrid } from '../utils/grid';
 
 const links = [
   { to: '/', label: 'Main Control' },
@@ -13,28 +13,20 @@ export default function TopNav() {
     hardwareState,
     connectHardware,
     disconnectHardware,
-    sendServoCommand,
-    updateHardwareConfig,
+    sendGridToHardware,
+    sendPatternCommand,
   } = useExperiment();
   const connected = hardwareState.status === 'connected';
 
-  const pulseRow = async (rowIndex, highAngle = 100, lowAngle = 90) => {
+  const pulseRow = async (rowIndex) => {
     if (!connected) return;
-    const baseChannel = hardwareState.config.channelStart ?? 0;
-
+    const grid = createEmptyGrid(0);
     for (let col = 0; col < 16; col += 1) {
-      const channel = baseChannel + getPhysicalServoIndex(rowIndex, col);
-      // eslint-disable-next-line no-await-in-loop
-      await sendServoCommand(channel, highAngle);
+      grid[rowIndex][col] = currentExperiment.maxDisplacementMm;
     }
 
-    window.setTimeout(async () => {
-      for (let col = 0; col < 16; col += 1) {
-        const channel = baseChannel + getPhysicalServoIndex(rowIndex, col);
-        // eslint-disable-next-line no-await-in-loop
-        await sendServoCommand(channel, lowAngle);
-      }
-    }, 450);
+    await sendGridToHardware(grid);
+    window.setTimeout(() => sendPatternCommand('flat'), 450);
   };
 
   return (
@@ -76,42 +68,18 @@ export default function TopNav() {
               </button>
             </div>
 
-            <label>
-              Channel Start
-              <input
-                type="number"
-                min={0}
-                max={63}
-                step={1}
-                value={hardwareState.config.channelStart}
-                onChange={(event) =>
-                  updateHardwareConfig({ channelStart: Math.max(0, Math.min(63, Number(event.target.value) || 0)) })
-                }
-                disabled={!hardwareState.supported}
-              />
-            </label>
+            <div className="saved-actions">
+              <button className="secondary" onClick={() => sendPatternCommand('flat')} disabled={!connected}>Flat</button>
+              <button className="secondary" onClick={() => sendPatternCommand('sine')} disabled={!connected}>Sine</button>
+              <button className="secondary" onClick={() => sendPatternCommand('diag')} disabled={!connected}>Diagonal</button>
+              <button className="secondary" onClick={() => sendPatternCommand('uiuc')} disabled={!connected}>UIUC</button>
+            </div>
 
             <div className="saved-actions">
               <button className="secondary" onClick={() => pulseRow(0)} disabled={!connected}>Test Row 1</button>
               <button className="secondary" onClick={() => pulseRow(1)} disabled={!connected}>Test Row 2</button>
               <button className="secondary" onClick={() => pulseRow(2)} disabled={!connected}>Test Row 3</button>
               <button className="secondary" onClick={() => pulseRow(3)} disabled={!connected}>Test Row 4</button>
-            </div>
-
-            <div className="saved-actions">
-              <button
-                className="secondary"
-                onClick={async () => {
-                  const baseChannel = hardwareState.config.channelStart ?? 0;
-                  for (let channel = 0; channel < 64; channel += 1) {
-                    // eslint-disable-next-line no-await-in-loop
-                    await sendServoCommand(baseChannel + channel, 90);
-                  }
-                }}
-                disabled={!connected}
-              >
-                Send All to 90
-              </button>
             </div>
           </div>
         </details>

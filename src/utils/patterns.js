@@ -1,10 +1,5 @@
 import { clamp, cloneGrid } from './grid';
 
-export function displacementToServoAngle(displacementMm, maxDisplacementMm, servoMaxDegrees) {
-  const normalized = clamp(displacementMm / Math.max(0.001, maxDisplacementMm), 0, 1);
-  return -servoMaxDegrees + normalized * servoMaxDegrees * 2;
-}
-
 function interpolateValue(start, end, t, mode = 'linear') {
   if (mode === 'sine') {
     const eased = 0.5 - 0.5 * Math.cos(Math.PI * t);

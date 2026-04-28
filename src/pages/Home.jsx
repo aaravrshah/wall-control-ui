@@ -1,27 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import CalibrationModal from '../components/CalibrationModal';
 import ExperimentManagerModal from '../components/ExperimentManagerModal';
 import ExperimentPreview from '../components/ExperimentPreview';
 import { useExperiment } from '../context/ExperimentContext';
+import { DEFAULT_FRAME_INTERVAL_MS } from '../utils/hardware';
 import { applyMotionTracks } from '../utils/patterns';
 
 export default function Home() {
   const {
     currentExperiment,
     savedExperiments,
-    calibration,
     runState,
     updateExperiment,
-    updateCalibration,
     updateRunState,
     loadSavedExperiment,
     deleteSavedExperiment,
     hardwareState,
     sendGridToHardware,
+    sendPatternCommand,
   } = useExperiment();
   const [frameTime, setFrameTime] = useState(0);
-  const [showCalibration, setShowCalibration] = useState(false);
   const [showExperimentManager, setShowExperimentManager] = useState(false);
   const latestPreviewGridRef = useRef(null);
   const sendInFlightRef = useRef(false);
@@ -90,7 +88,7 @@ export default function Home() {
       }
 
       if (!cancelled) {
-        window.setTimeout(streamFrame, 450);
+        window.setTimeout(streamFrame, DEFAULT_FRAME_INTERVAL_MS);
       }
     };
 
@@ -100,6 +98,13 @@ export default function Home() {
       sendInFlightRef.current = false;
     };
   }, [hardwareState.status, runState.status, sendGridToHardware]);
+
+  const stopRun = async () => {
+    updateRunState({ status: 'stopped', elapsedTime: 0 });
+    if (hardwareState.status === 'connected') {
+      await sendPatternCommand('flat');
+    }
+  };
 
   return (
     <div className="page-stack main-control-page">
@@ -119,8 +124,7 @@ export default function Home() {
           <div className="run-controls">
             <button onClick={() => updateRunState({ status: 'running' })}>Run</button>
             <button className="secondary" onClick={() => updateRunState({ status: 'paused' })}>Pause</button>
-            <button className="danger" onClick={() => updateRunState({ status: 'stopped', elapsedTime: 0 })}>Stop</button>
-            <button className="secondary" onClick={() => setShowCalibration(true)}>Calibration</button>
+            <button className="danger" onClick={stopRun}>Stop</button>
             <Link to="/actuators" className="primary-link">Actuator Editor</Link>
           </div>
         </div>
@@ -155,21 +159,9 @@ export default function Home() {
           <p><strong>Current:</strong> {currentExperiment.name}</p>
           <p><strong>Motion Tracks:</strong> {currentExperiment.motionTracks.length}</p>
           <p><strong>Playback:</strong> {runState.status}</p>
-          <p><strong>Calibration Offsets:</strong> active on {calibration.offsetGrid.flat().filter((value) => Math.abs(value) > 0.01).length} actuators</p>
+          <p><strong>Hardware Safety:</strong> firmware calibration and clamps active</p>
         </section>
       </div>
-
-      <CalibrationModal
-        open={showCalibration}
-        offsetGrid={calibration.offsetGrid}
-        maxTrim={2}
-        midpoint={0}
-        onClose={() => setShowCalibration(false)}
-        onSave={(offsetGrid) => {
-          updateCalibration({ offsetGrid });
-          setShowCalibration(false);
-        }}
-      />
 
       <ExperimentManagerModal
         open={showExperimentManager}

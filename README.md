@@ -2,7 +2,7 @@
 
 A frontend-first React + Vite prototype for operating a **4 × 16 programmable deformable wall** used in oscillatory flume experiments.
 
-This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It now includes a browser-side serial link for sending Arduino servo commands from the main control page.
+This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It now includes a browser-side serial link that sends safe Arduino pattern/frame commands from the main control page.
 
 ## What this prototype includes
 
@@ -45,23 +45,24 @@ This v1 prototype **does not** include:
 - Real actuator telemetry
 - Real-time fault handling logic
 
-Wall-state previews remain simulated in the UI, but the Home page can now send `channel:angle` serial commands to a connected Arduino over the Web Serial API.
+Wall-state previews remain simulated in the UI, but the Home page can now send positive-only `frame:<64 values>` commands or demo pattern commands to a connected Arduino over the Web Serial API.
 
 ## Arduino hookup
 
 The main control page now includes an **Arduino Link** panel that can:
 
 - Request a serial connection to the Arduino from the browser
-- Send one-off `channel:angle` jog commands
+- Send `flat`, `sine`, `diag`, and `uiuc` commands from the tested demo sketch
 - Stream the current wall preview while a run is active
-- Map any contiguous slice of the 4 x 16 wall grid onto Arduino channel numbers
+- Send row-major positive displacement frames for the 4 x 16 wall grid
 
 Important setup notes:
 
 - Use a Chromium-based browser that supports the Web Serial API, such as Chrome or Edge.
 - Run the app from `localhost` or another secure context.
 - Match the baud rate to the Arduino sketch. The provided sketch uses `9600`.
-- The included `arduino_wall_controller.ino` sketch drives four PCA9685 boards, so the default UI mapping now sends all `64` wall cells to Arduino channels `0-63`.
+- The included `arduino_wall_controller.ino` sketch is based on `arduino_demo_patterns.ino`: it owns calibrated centers, board direction signs, physical row/column mapping, and PWM clamps.
+- The UI no longer sends raw servo angles. It sends positive displacement degrees only, and the Arduino clamps every command to `0..28` degrees before converting to PCA9685 ticks.
 
 ## Folder structure
 
