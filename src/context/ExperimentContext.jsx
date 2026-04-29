@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
 import {
   cloneCalibration,
   cloneExperiment,
@@ -9,13 +9,6 @@ import {
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import { loadState, saveState } from '../utils/storage';
 import { cloneGrid } from '../utils/grid';
-import {
-  buildArduinoProgramCommands,
-  buildGridFrameCommand,
-  DEFAULT_SERIAL_BAUD_RATE,
-  normalizePatternCommand,
-  PROGRAM_UPLOAD_LINE_DELAY_MS,
-} from '../utils/hardware';
 
 const ExperimentContext = createContext(null);
 
@@ -62,18 +55,6 @@ function getInitialState() {
 
 export function ExperimentProvider({ children }) {
   const [state, setState] = useLocalStorageState(getInitialState, saveState);
-  const [hardwareState, setHardwareState] = useState({
-    supported: typeof navigator !== 'undefined' && 'serial' in navigator,
-    status: 'disconnected',
-    error: '',
-    lastCommandAt: null,
-    lastCommandSummary: 'No commands sent yet.',
-    config: {
-      baudRate: DEFAULT_SERIAL_BAUD_RATE,
-    },
-  });
-  const portRef = useRef(null);
-  const writerRef = useRef(null);
 
   const withExperimentHistory = useCallback((previous, nextExperiment) => ({
     ...previous,
@@ -224,226 +205,6 @@ export function ExperimentProvider({ children }) {
     }));
   }, [setState]);
 
-  const disconnectHardware = useCallback(async () => {
-    const writer = writerRef.current;
-    const port = portRef.current;
-
-    try {
-      if (writer) {
-        await writer.close();
-        writer.releaseLock();
-      }
-    } catch (error) {
-      console.warn('Unable to close serial writer cleanly.', error);
-    }
-
-    try {
-      if (port) {
-        await port.close();
-      }
-    } catch (error) {
-      console.warn('Unable to close serial port cleanly.', error);
-    }
-
-    writerRef.current = null;
-    portRef.current = null;
-    setHardwareState((previous) => ({
-      ...previous,
-      status: 'disconnected',
-      error: '',
-    }));
-  }, []);
-
-  const connectHardware = useCallback(async () => {
-    if (typeof navigator === 'undefined' || !('serial' in navigator)) {
-      setHardwareState((previous) => ({
-        ...previous,
-        supported: false,
-        status: 'error',
-        error: 'Web Serial is not available in this browser. Use a Chromium-based browser on localhost or HTTPS.',
-      }));
-      return false;
-    }
-
-    setHardwareState((previous) => ({
-      ...previous,
-      supported: true,
-      status: 'connecting',
-      error: '',
-    }));
-
-    try {
-      const port = await navigator.serial.requestPort();
-      await port.open({ baudRate: hardwareState.config.baudRate });
-      const writer = port.writable.getWriter();
-      await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      await writer.write(new TextEncoder().encode('flat\n'));
-
-      portRef.current = port;
-      writerRef.current = writer;
-
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'connected',
-        error: '',
-        lastCommandSummary: `Connected at ${previous.config.baudRate} baud and sent flat.`,
-      }));
-      return true;
-    } catch (error) {
-      writerRef.current = null;
-      portRef.current = null;
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'error',
-        error: error?.message || 'Unable to connect to the serial device.',
-      }));
-      return false;
-    }
-  }, [hardwareState.config.baudRate]);
-
-  const updateHardwareConfig = useCallback((patch) => {
-    setHardwareState((previous) => ({
-      ...previous,
-      config: {
-        ...previous.config,
-        ...patch,
-      },
-    }));
-  }, []);
-
-  const sendRawCommand = useCallback(async (command, summary) => {
-    const writer = writerRef.current;
-    if (!writer) {
-      setHardwareState((previous) => ({
-        ...previous,
-        status: previous.supported ? 'disconnected' : previous.status,
-        error: 'No serial connection is active.',
-      }));
-      return false;
-    }
-
-    try {
-      await writer.write(new TextEncoder().encode(command));
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'connected',
-        error: '',
-        lastCommandAt: new Date().toISOString(),
-        lastCommandSummary: summary,
-      }));
-      return true;
-    } catch (error) {
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'error',
-        error: error?.message || 'Unable to write to the serial device.',
-      }));
-      return false;
-    }
-  }, []);
-
-  const sendRawCommandBatch = useCallback(async (commands, summary, lineDelayMs = PROGRAM_UPLOAD_LINE_DELAY_MS) => {
-    const writer = writerRef.current;
-    if (!writer) {
-      setHardwareState((previous) => ({
-        ...previous,
-        status: previous.supported ? 'disconnected' : previous.status,
-        error: 'No serial connection is active.',
-      }));
-      return false;
-    }
-
-    try {
-      const encoder = new TextEncoder();
-      for (const command of commands) {
-        // eslint-disable-next-line no-await-in-loop
-        await writer.write(encoder.encode(command));
-        if (lineDelayMs > 0) {
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((resolve) => window.setTimeout(resolve, lineDelayMs));
-        }
-      }
-
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'connected',
-        error: '',
-        lastCommandAt: new Date().toISOString(),
-        lastCommandSummary: summary,
-      }));
-      return true;
-    } catch (error) {
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'error',
-        error: error?.message || 'Unable to write to the serial device.',
-      }));
-      return false;
-    }
-  }, []);
-
-  const sendPatternCommand = useCallback(async (pattern) => {
-    const safePattern = normalizePatternCommand(pattern);
-    return sendRawCommand(`${safePattern}\n`, `Sent ${safePattern} pattern command.`);
-  }, [sendRawCommand]);
-
-  const sendGridToHardware = useCallback(async (grid, options = {}) => {
-    const frame = buildGridFrameCommand(grid, {
-      maxDisplacementMm: options.maxDisplacementMm ?? state.currentExperiment.maxDisplacementMm,
-    });
-
-    return sendRawCommand(
-      frame.command,
-      `Sent ${frame.valueCount} positive displacement values, clamped 0-${frame.maxDegrees} deg.`,
-    );
-  }, [sendRawCommand, state.currentExperiment.maxDisplacementMm]);
-
-  const sendProgramToHardware = useCallback(async (experiment = state.currentExperiment) => {
-    const commands = buildArduinoProgramCommands(experiment);
-    const programFrameCount = Math.max(0, commands.length - 3);
-
-    return sendRawCommandBatch(
-      commands,
-      `Uploaded and started ${programFrameCount} onboard program frame${programFrameCount === 1 ? '' : 's'}.`,
-    );
-  }, [sendRawCommandBatch, state.currentExperiment]);
-
-  const sendProgramControlCommand = useCallback(async (command) => {
-    const normalized = String(command ?? '').trim().toLowerCase();
-    const allowed = ['pause', 'resume', 'stop', 'clear'];
-    const safeCommand = allowed.includes(normalized) ? normalized : 'stop';
-    return sendRawCommand(`prog ${safeCommand}\n`, `Sent program ${safeCommand}.`);
-  }, [sendRawCommand]);
-
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !('serial' in navigator)) {
-      return undefined;
-    }
-
-    const handleDisconnect = (event) => {
-      if (event.target !== portRef.current) {
-        return;
-      }
-
-      writerRef.current = null;
-      portRef.current = null;
-      setHardwareState((previous) => ({
-        ...previous,
-        status: 'disconnected',
-        error: 'The serial device was disconnected.',
-      }));
-    };
-
-    navigator.serial.addEventListener('disconnect', handleDisconnect);
-    return () => navigator.serial.removeEventListener('disconnect', handleDisconnect);
-  }, []);
-
-  useEffect(() => () => {
-    if (writerRef.current || portRef.current) {
-      disconnectHardware();
-    }
-  }, [disconnectHardware]);
-
   const value = useMemo(() => ({
     currentExperiment: state.currentExperiment,
     savedExperiments: state.savedExperiments,
@@ -462,14 +223,6 @@ export function ExperimentProvider({ children }) {
     undoExperiment,
     redoExperiment,
     recordHistorySnapshot,
-    hardwareState,
-    updateHardwareConfig,
-    connectHardware,
-    disconnectHardware,
-    sendPatternCommand,
-    sendGridToHardware,
-    sendProgramToHardware,
-    sendProgramControlCommand,
   }), [
     state,
     updateExperiment,
@@ -483,14 +236,6 @@ export function ExperimentProvider({ children }) {
     undoExperiment,
     redoExperiment,
     recordHistorySnapshot,
-    hardwareState,
-    updateHardwareConfig,
-    connectHardware,
-    disconnectHardware,
-    sendPatternCommand,
-    sendGridToHardware,
-    sendProgramToHardware,
-    sendProgramControlCommand,
   ]);
 
   return <ExperimentContext.Provider value={value}>{children}</ExperimentContext.Provider>;

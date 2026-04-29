@@ -114,8 +114,6 @@ const int GRID_COLS = 16;
 #define SERVOMAX   512
 #define SERVO_FREQ 50
 
-const long SERIAL_BAUD_RATE = 9600;
-
 const float FREQUENCY_HZ = ${formatNumber(safeParams.frequencyHz, 3)};
 const float AMPLITUDE_DEGREES = ${formatNumber(safeParams.amplitudeDegrees, 3)};
 const float COLUMN_PHASE_RADIANS = ${formatNumber(columnPhaseRadians, 6)};
@@ -146,7 +144,6 @@ ${formatMaskRows(mask)}
 };
 
 float centers[TOTAL_SERVOS];
-bool running = true;
 
 int servoIndexToBoard(int servoIndex) {
   return servoIndex / CHANNELS_PER_BOARD;
@@ -171,10 +168,6 @@ float positiveWave(float radians) {
 }
 
 float getDisplacementDegrees(int row, int col, float timeSec) {
-  if (!running) {
-    return 0.0;
-  }
-
   float phase =
     (2.0 * PI * FREQUENCY_HZ * timeSec) +
     (col * COLUMN_PHASE_RADIANS) +
@@ -201,34 +194,7 @@ void initializeCenters() {
   }
 }
 
-void handleSerialCommands() {
-  if (!Serial.available()) {
-    return;
-  }
-
-  String line = Serial.readStringUntil('\\n');
-  line.trim();
-  line.toLowerCase();
-
-  if (line == "run") {
-    running = true;
-    Serial.println("Running generated pattern.");
-    return;
-  }
-
-  if (line == "flat" || line == "stop") {
-    running = false;
-    Serial.println("Holding flat.");
-    return;
-  }
-
-  if (line == "help") {
-    Serial.println("Commands: run, flat, stop, help");
-  }
-}
-
 void setup() {
-  Serial.begin(SERIAL_BAUD_RATE);
   Wire.begin();
 
   for (int boardIdx = 0; boardIdx < BOARD_COUNT; boardIdx += 1) {
@@ -238,13 +204,9 @@ void setup() {
   }
 
   initializeCenters();
-  Serial.println("Generated wall pattern ready.");
-  Serial.println("Commands: run, flat, stop, help");
 }
 
 void loop() {
-  handleSerialCommands();
-
   static unsigned long startTime = millis();
   float timeSec = (millis() - startTime) / 1000.0;
 

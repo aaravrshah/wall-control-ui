@@ -9,8 +9,24 @@ function formatStatus(status) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+const hardwareInfo = {
+  power: {
+    supplyName: '5 V servo supply',
+    railVoltage: 5,
+    fuseBanksHealthy: 4,
+    fuseBanksTotal: 4,
+    transientProtection: 'PCB protection network',
+  },
+  pwmBoards: [
+    { id: '0x40', channels: 16 },
+    { id: '0x41', channels: 16 },
+    { id: '0x42', channels: 16 },
+    { id: '0x43', channels: 16 },
+  ],
+};
+
 export default function Run() {
-  const { currentExperiment, runState, updateRunState, hardwareState } = useExperiment();
+  const { currentExperiment, runState, updateRunState } = useExperiment();
   const [frameTime, setFrameTime] = useState(0);
 
   useEffect(() => {
@@ -108,8 +124,8 @@ export default function Run() {
             subtitle="What the operator should mentally track during a run."
           />
           <ul className="bullet-list">
-            <li>PC issues run command over USB to the Arduino Mega.</li>
-            <li>Arduino distributes PWM setpoints to PCA9685 boards over I2C.</li>
+            <li>UI generates a complete Arduino sketch for manual upload.</li>
+            <li>Arduino owns timing and distributes PWM setpoints to PCA9685 boards over I2C.</li>
             <li>Driver outputs command the MG90S servos beneath the membrane.</li>
             <li>Custom PCB distributes regulated 5 V power and protection to the actuator banks.</li>
           </ul>
@@ -120,19 +136,19 @@ export default function Run() {
           <dl className="detail-list compact">
             <div>
               <dt>Supply</dt>
-              <dd>{hardwareState.power.supplyName}</dd>
+              <dd>{hardwareInfo.power.supplyName}</dd>
             </div>
             <div>
               <dt>Rail Voltage</dt>
-              <dd>{hardwareState.power.railVoltage.toFixed(2)} V</dd>
+              <dd>{hardwareInfo.power.railVoltage.toFixed(2)} V</dd>
             </div>
             <div>
               <dt>Fuse Banks</dt>
-              <dd>{hardwareState.power.fuseBanksHealthy} / {hardwareState.power.fuseBanksTotal} healthy</dd>
+              <dd>{hardwareInfo.power.fuseBanksHealthy} / {hardwareInfo.power.fuseBanksTotal} healthy</dd>
             </div>
             <div>
               <dt>Protection</dt>
-              <dd>{hardwareState.power.transientProtection}</dd>
+              <dd>{hardwareInfo.power.transientProtection}</dd>
             </div>
           </dl>
           <div className="callout subtle">
@@ -144,7 +160,7 @@ export default function Run() {
         <section className="panel">
           <SectionHeader title="Driver Boards" subtitle="Channel groups corresponding to your PCA9685 banks." />
           <div className="architecture-grid board-grid">
-            {hardwareState.pwmBoards.map((board, index) => (
+            {hardwareInfo.pwmBoards.map((board, index) => (
               <article key={board.id} className="arch-card">
                 <p>Board {board.id}</p>
                 <h3>{board.channels} channels</h3>
