@@ -2,7 +2,7 @@
 
 A frontend-first React + Vite prototype for operating a **4 × 16 programmable deformable wall** used in oscillatory flume experiments.
 
-This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It now includes a browser-side serial link that sends safe Arduino pattern/frame commands from the main control page.
+This build is intentionally focused on operator UX, experiment setup flow, and advanced editing/sequencing scaffolding. It now generates complete Arduino sketches so the Arduino owns motion timing locally.
 
 ## What this prototype includes
 
@@ -45,25 +45,23 @@ This v1 prototype **does not** include:
 - Real actuator telemetry
 - Real-time fault handling logic
 
-Wall-state previews remain simulated in the UI, but the Home page now uploads a compact keyframe program to the Arduino and lets the Arduino run the motion locally.
+Wall-state previews remain simulated in the UI. The Home page generates a complete `.ino` sketch based on the tested Arduino pattern code, the current grid, and operator-selected wave parameters.
 
-## Arduino hookup
+## Arduino workflow
 
-The main control page now includes an **Arduino Link** panel that can:
+The main control page now includes an **Arduino Sketch** panel that can:
 
-- Request a serial connection to the Arduino from the browser
-- Send `flat`, `sine`, `diag`, and `uiuc` commands from the tested demo sketch
-- Upload row-major positive displacement keyframes for the 4 x 16 wall grid
-- Send `prog play`, `prog pause`, and `prog stop` controls without continuously streaming frames
+- Preview the generated 4 x 16 wave pattern
+- Tune frequency, amplitude, column phase, row phase, global phase, and refresh delay
+- Convert the current actuator grid into per-cell amplitude multipliers
+- Generate a full Arduino sketch that includes all 64 servos, calibrated centers, row/column mapping, board direction signs, and PWM clamps
 
 Important setup notes:
 
-- Use a Chromium-based browser that supports the Web Serial API, such as Chrome or Edge.
-- Run the app from `localhost` or another secure context.
-- Match the baud rate to the Arduino sketch. The provided sketch uses `115200`.
-- The included `arduino_wall_controller.ino` sketch is based on `arduino_demo_patterns.ino`: it owns calibrated centers, board direction signs, physical row/column mapping, and PWM clamps.
-- The UI no longer sends raw servo angles. It sends positive displacement degrees only, and the Arduino clamps every command to `0..28` degrees before converting to PCA9685 ticks.
-- Runs do not stream every animation frame from JavaScript. The UI uploads keyframes once, then Arduino interpolates onboard at its servo refresh rate.
+- Copy the generated sketch from the UI.
+- Paste it into Arduino IDE.
+- Upload it manually to the Arduino.
+- Runs do not stream motion commands from JavaScript. The generated Arduino sketch runs the pattern locally at its own refresh rate.
 
 ## Folder structure
 

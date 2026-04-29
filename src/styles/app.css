@@ -394,6 +394,22 @@ textarea {
   resize: vertical;
 }
 
+.generated-code-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.code-output {
+  min-height: 520px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #0e2637;
+  background: #f7fafc;
+  white-space: pre;
+  overflow: auto;
+}
+
 .numeric-control {
   display: grid;
   gap: 0.45rem;
