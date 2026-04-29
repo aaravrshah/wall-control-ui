@@ -4,7 +4,7 @@ import ExperimentManagerModal from '../components/ExperimentManagerModal';
 import ExperimentPreview from '../components/ExperimentPreview';
 import { useExperiment } from '../context/ExperimentContext';
 import { DEFAULT_FRAME_INTERVAL_MS } from '../utils/hardware';
-import { applyMotionTracks } from '../utils/patterns';
+import { applyMotionTracks, getMotionForwardDuration, getPingPongPlaybackTime } from '../utils/patterns';
 
 export default function Home() {
   const {
@@ -43,14 +43,11 @@ export default function Home() {
     return () => cancelAnimationFrame(raf);
   }, [runState.status, runState.elapsedTime, updateRunState]);
 
-  const cycleDuration = Math.max(
-    1,
-    ...currentExperiment.motionTracks.map((track) =>
-      Math.max(0, ...(track.points ?? []).map((point) => point.timeSec)),
-    ),
-  );
-  const cycleElapsed = cycleDuration > 0 ? runState.elapsedTime % cycleDuration : 0;
-  const progress = cycleDuration > 0 ? cycleElapsed / cycleDuration : 0;
+  const forwardDuration = getMotionForwardDuration(currentExperiment.motionTracks);
+  const cycleDuration = forwardDuration * 2;
+  const loopElapsed = cycleDuration > 0 ? runState.elapsedTime % cycleDuration : 0;
+  const cycleElapsed = getPingPongPlaybackTime(runState.elapsedTime, forwardDuration);
+  const progress = cycleDuration > 0 ? loopElapsed / cycleDuration : 0;
   const playbackTime =
     runState.status === 'running' || runState.status === 'paused'
       ? cycleElapsed

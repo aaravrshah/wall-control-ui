@@ -66,6 +66,10 @@ enum PatternMode {
 PatternMode currentPattern = PATTERN_FLAT;
 float centers[TOTAL_SERVOS];
 float uiFrameDisplacementDegrees[GRID_ROWS][GRID_COLS];
+unsigned long goodFrameCount = 0;
+unsigned long badFrameCount = 0;
+
+void handleSerialCommands();
 
 int servoIndexToBoard(int servoIndex) {
   return servoIndex / CHANNELS_PER_BOARD;
@@ -131,6 +135,10 @@ void driveServoDisplacement(int servoIndex, float displacementDegrees) {
 
 void driveCurrentPattern(float timeSec) {
   for (int servoIndex = 0; servoIndex < TOTAL_SERVOS; servoIndex += 1) {
+    if (servoIndex % 4 == 0) {
+      handleSerialCommands();
+    }
+
     int boardIdx = servoIndexToBoard(servoIndex);
     int channel = servoIndexToChannel(servoIndex);
     int row = PHYSICAL_ROW_BY_BOARD[boardIdx];
@@ -230,9 +238,7 @@ bool handleFrameCommand(String line) {
 
   float nextFrame[GRID_ROWS][GRID_COLS];
   if (!parseFramePayload(line.substring(separatorIndex + 1), nextFrame)) {
-    clearUiFrame();
-    currentPattern = PATTERN_FLAT;
-    Serial.println("error:bad-frame, flattened");
+    badFrameCount += 1;
     return true;
   }
 
@@ -243,7 +249,7 @@ bool handleFrameCommand(String line) {
   }
 
   currentPattern = PATTERN_UI_FRAME;
-  Serial.println("ok:frame");
+  goodFrameCount += 1;
   return true;
 }
 
@@ -257,6 +263,10 @@ void printStatus() {
   Serial.println(SERVOMAX);
   Serial.print("Max positive displacement degrees: ");
   Serial.println(WAVE_AMPLITUDE_DEGREES, 1);
+  Serial.print("Good UI frames: ");
+  Serial.println(goodFrameCount);
+  Serial.print("Bad UI frames ignored: ");
+  Serial.println(badFrameCount);
 }
 
 void printHelp() {
@@ -330,6 +340,14 @@ void handleSerialCommands() {
   printHelp();
 }
 
+void responsiveDelay(unsigned long durationMs) {
+  unsigned long startMs = millis();
+  while (millis() - startMs < durationMs) {
+    handleSerialCommands();
+    delay(1);
+  }
+}
+
 void initializeCenters() {
   for (int servoIndex = 0; servoIndex < TOTAL_SERVOS; servoIndex += 1) {
     centers[servoIndex] = baseCenter + (centerOffsetDegrees[servoIndex] * ticksPerDegree);
@@ -363,5 +381,5 @@ void loop() {
   float timeSec = (millis() - startTime) / 1000.0;
 
   driveCurrentPattern(timeSec);
-  delay(20);
+  responsiveDelay(20);
 }

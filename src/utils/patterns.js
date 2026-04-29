@@ -8,6 +8,25 @@ function interpolateValue(start, end, t, mode = 'linear') {
   return start + (end - start) * t;
 }
 
+export function getMotionForwardDuration(tracks) {
+  return Math.max(
+    1,
+    ...(tracks ?? []).map((track) =>
+      Math.max(0, ...(track.points ?? []).map((point) => point.timeSec)),
+    ),
+  );
+}
+
+export function getPingPongPlaybackTime(elapsedTime, forwardDuration) {
+  const safeForwardDuration = Math.max(1, Number(forwardDuration) || 1);
+  const fullLoopDuration = safeForwardDuration * 2;
+  const loopElapsed = (Number(elapsedTime) || 0) % fullLoopDuration;
+
+  return loopElapsed <= safeForwardDuration
+    ? loopElapsed
+    : fullLoopDuration - loopElapsed;
+}
+
 export function sampleTrackDisplacement(track, timeSec, maxDisplacementMm) {
   const points = [...(track.points ?? [])].sort((a, b) => a.timeSec - b.timeSec);
   if (points.length === 0) {
