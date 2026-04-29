@@ -10,9 +10,11 @@ import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import { loadState, saveState } from '../utils/storage';
 import { cloneGrid } from '../utils/grid';
 import {
+  buildArduinoProgramCommands,
   buildGridFrameCommand,
   DEFAULT_SERIAL_BAUD_RATE,
   normalizePatternCommand,
+  PROGRAM_UPLOAD_LINE_DELAY_MS,
 } from '../utils/hardware';
 
 const ExperimentContext = createContext(null);
@@ -340,6 +342,46 @@ export function ExperimentProvider({ children }) {
     }
   }, []);
 
+  const sendRawCommandBatch = useCallback(async (commands, summary, lineDelayMs = PROGRAM_UPLOAD_LINE_DELAY_MS) => {
+    const writer = writerRef.current;
+    if (!writer) {
+      setHardwareState((previous) => ({
+        ...previous,
+        status: previous.supported ? 'disconnected' : previous.status,
+        error: 'No serial connection is active.',
+      }));
+      return false;
+    }
+
+    try {
+      const encoder = new TextEncoder();
+      for (const command of commands) {
+        // eslint-disable-next-line no-await-in-loop
+        await writer.write(encoder.encode(command));
+        if (lineDelayMs > 0) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => window.setTimeout(resolve, lineDelayMs));
+        }
+      }
+
+      setHardwareState((previous) => ({
+        ...previous,
+        status: 'connected',
+        error: '',
+        lastCommandAt: new Date().toISOString(),
+        lastCommandSummary: summary,
+      }));
+      return true;
+    } catch (error) {
+      setHardwareState((previous) => ({
+        ...previous,
+        status: 'error',
+        error: error?.message || 'Unable to write to the serial device.',
+      }));
+      return false;
+    }
+  }, []);
+
   const sendPatternCommand = useCallback(async (pattern) => {
     const safePattern = normalizePatternCommand(pattern);
     return sendRawCommand(`${safePattern}\n`, `Sent ${safePattern} pattern command.`);
@@ -355,6 +397,23 @@ export function ExperimentProvider({ children }) {
       `Sent ${frame.valueCount} positive displacement values, clamped 0-${frame.maxDegrees} deg.`,
     );
   }, [sendRawCommand, state.currentExperiment.maxDisplacementMm]);
+
+  const sendProgramToHardware = useCallback(async (experiment = state.currentExperiment) => {
+    const commands = buildArduinoProgramCommands(experiment);
+    const programFrameCount = Math.max(0, commands.length - 3);
+
+    return sendRawCommandBatch(
+      commands,
+      `Uploaded and started ${programFrameCount} onboard program frame${programFrameCount === 1 ? '' : 's'}.`,
+    );
+  }, [sendRawCommandBatch, state.currentExperiment]);
+
+  const sendProgramControlCommand = useCallback(async (command) => {
+    const normalized = String(command ?? '').trim().toLowerCase();
+    const allowed = ['pause', 'resume', 'stop', 'clear'];
+    const safeCommand = allowed.includes(normalized) ? normalized : 'stop';
+    return sendRawCommand(`prog ${safeCommand}\n`, `Sent program ${safeCommand}.`);
+  }, [sendRawCommand]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serial' in navigator)) {
@@ -409,6 +468,8 @@ export function ExperimentProvider({ children }) {
     disconnectHardware,
     sendPatternCommand,
     sendGridToHardware,
+    sendProgramToHardware,
+    sendProgramControlCommand,
   }), [
     state,
     updateExperiment,
@@ -428,6 +489,8 @@ export function ExperimentProvider({ children }) {
     disconnectHardware,
     sendPatternCommand,
     sendGridToHardware,
+    sendProgramToHardware,
+    sendProgramControlCommand,
   ]);
 
   return <ExperimentContext.Provider value={value}>{children}</ExperimentContext.Provider>;

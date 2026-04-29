@@ -45,7 +45,7 @@ This v1 prototype **does not** include:
 - Real actuator telemetry
 - Real-time fault handling logic
 
-Wall-state previews remain simulated in the UI, but the Home page can now send positive-only `frame:<64 values>` commands or demo pattern commands to a connected Arduino over the Web Serial API.
+Wall-state previews remain simulated in the UI, but the Home page now uploads a compact keyframe program to the Arduino and lets the Arduino run the motion locally.
 
 ## Arduino hookup
 
@@ -53,8 +53,8 @@ The main control page now includes an **Arduino Link** panel that can:
 
 - Request a serial connection to the Arduino from the browser
 - Send `flat`, `sine`, `diag`, and `uiuc` commands from the tested demo sketch
-- Stream the current wall preview while a run is active
-- Send row-major positive displacement frames for the 4 x 16 wall grid
+- Upload row-major positive displacement keyframes for the 4 x 16 wall grid
+- Send `prog play`, `prog pause`, and `prog stop` controls without continuously streaming frames
 
 Important setup notes:
 
@@ -63,6 +63,7 @@ Important setup notes:
 - Match the baud rate to the Arduino sketch. The provided sketch uses `115200`.
 - The included `arduino_wall_controller.ino` sketch is based on `arduino_demo_patterns.ino`: it owns calibrated centers, board direction signs, physical row/column mapping, and PWM clamps.
 - The UI no longer sends raw servo angles. It sends positive displacement degrees only, and the Arduino clamps every command to `0..28` degrees before converting to PCA9685 ticks.
+- Runs do not stream every animation frame from JavaScript. The UI uploads keyframes once, then Arduino interpolates onboard at its servo refresh rate.
 
 ## Folder structure
 

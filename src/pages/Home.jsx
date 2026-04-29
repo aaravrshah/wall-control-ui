@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ExperimentManagerModal from '../components/ExperimentManagerModal';
 import ExperimentPreview from '../components/ExperimentPreview';
 import { useExperiment } from '../context/ExperimentContext';
-import { DEFAULT_FRAME_INTERVAL_MS } from '../utils/hardware';
 import { applyMotionTracks, getMotionForwardDuration, getPingPongPlaybackTime } from '../utils/patterns';
 
 export default function Home() {
@@ -16,13 +15,11 @@ export default function Home() {
     loadSavedExperiment,
     deleteSavedExperiment,
     hardwareState,
-    sendGridToHardware,
-    sendPatternCommand,
+    sendProgramToHardware,
+    sendProgramControlCommand,
   } = useExperiment();
   const [frameTime, setFrameTime] = useState(0);
   const [showExperimentManager, setShowExperimentManager] = useState(false);
-  const latestPreviewGridRef = useRef(null);
-  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (runState.status !== 'running') {
@@ -61,45 +58,39 @@ export default function Home() {
     ),
     [currentExperiment, playbackTime, runState.status],
   );
-  latestPreviewGridRef.current = previewGrid;
 
-  useEffect(() => {
-    if (runState.status !== 'running' || hardwareState.status !== 'connected') {
-      return undefined;
-    }
+  const startRun = async () => {
+    if (hardwareState.status === 'connected') {
+      const sent = runState.status === 'paused'
+        ? await sendProgramControlCommand('resume')
+        : await sendProgramToHardware(currentExperiment);
 
-    let cancelled = false;
-
-    const streamFrame = async () => {
-      if (cancelled) {
+      if (!sent) {
         return;
       }
+    }
 
-      if (!sendInFlightRef.current) {
-        sendInFlightRef.current = true;
-        try {
-          await sendGridToHardware(latestPreviewGridRef.current);
-        } finally {
-          sendInFlightRef.current = false;
-        }
-      }
+    updateRunState({
+      status: 'running',
+      elapsedTime: runState.status === 'paused' ? runState.elapsedTime : 0,
+    });
+    if (runState.status !== 'paused') {
+      setFrameTime(0);
+    }
+  };
 
-      if (!cancelled) {
-        window.setTimeout(streamFrame, DEFAULT_FRAME_INTERVAL_MS);
-      }
-    };
-
-    streamFrame();
-    return () => {
-      cancelled = true;
-      sendInFlightRef.current = false;
-    };
-  }, [hardwareState.status, runState.status, sendGridToHardware]);
+  const pauseRun = async () => {
+    updateRunState({ status: 'paused' });
+    if (hardwareState.status === 'connected') {
+      await sendProgramControlCommand('pause');
+    }
+  };
 
   const stopRun = async () => {
     updateRunState({ status: 'stopped', elapsedTime: 0 });
+    setFrameTime(0);
     if (hardwareState.status === 'connected') {
-      await sendPatternCommand('flat');
+      await sendProgramControlCommand('stop');
     }
   };
 
@@ -119,8 +110,8 @@ export default function Home() {
             </div>
           </div>
           <div className="run-controls">
-            <button onClick={() => updateRunState({ status: 'running' })}>Run</button>
-            <button className="secondary" onClick={() => updateRunState({ status: 'paused' })}>Pause</button>
+            <button onClick={startRun}>Run</button>
+            <button className="secondary" onClick={pauseRun}>Pause</button>
             <button className="danger" onClick={stopRun}>Stop</button>
             <Link to="/actuators" className="primary-link">Actuator Editor</Link>
           </div>
@@ -156,6 +147,7 @@ export default function Home() {
           <p><strong>Current:</strong> {currentExperiment.name}</p>
           <p><strong>Motion Tracks:</strong> {currentExperiment.motionTracks.length}</p>
           <p><strong>Playback:</strong> {runState.status}</p>
+          <p><strong>Hardware Mode:</strong> onboard program playback</p>
           <p><strong>Hardware Safety:</strong> firmware calibration and clamps active</p>
         </section>
       </div>

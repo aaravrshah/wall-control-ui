@@ -13,6 +13,8 @@ const int CHANNELS_PER_BOARD = 16;
 const int TOTAL_SERVOS = 64;
 const int GRID_ROWS = 4;
 const int GRID_COLS = 16;
+const int SERIAL_LINE_MAX = 260;
+const int MAX_PROGRAM_FRAMES = 20;
 
 #define SERVOMIN   102
 #define SERVOMAX   512
@@ -61,13 +63,27 @@ enum PatternMode {
   PATTERN_UIUC = 2,
   PATTERN_FLAT = 3,
   PATTERN_UI_FRAME = 4,
+  PATTERN_PROGRAM = 5,
 };
 
 PatternMode currentPattern = PATTERN_FLAT;
 float centers[TOTAL_SERVOS];
 float uiFrameDisplacementDegrees[GRID_ROWS][GRID_COLS];
+byte programFrames[MAX_PROGRAM_FRAMES][TOTAL_SERVOS];
+unsigned long programFrameTimesMs[MAX_PROGRAM_FRAMES];
+bool programFrameReceived[MAX_PROGRAM_FRAMES];
+int expectedProgramFrameCount = 0;
+int programFrameCount = 0;
+bool programReady = false;
+bool programPlaying = false;
+unsigned long programStartMillis = 0;
+unsigned long programPausedElapsedMs = 0;
 unsigned long goodFrameCount = 0;
 unsigned long badFrameCount = 0;
+unsigned long goodProgramFrameCount = 0;
+unsigned long badProgramCommandCount = 0;
+char serialLineBuffer[SERIAL_LINE_MAX];
+int serialLineLength = 0;
 
 void handleSerialCommands();
 
@@ -93,9 +109,71 @@ float positiveWave(float radians) {
   return 0.5 * (sinf(radians) + 1.0);
 }
 
+float getProgramPlaybackTimeMs() {
+  if (!programReady || programFrameCount == 0) {
+    return 0.0;
+  }
+
+  unsigned long endTimeMs = programFrameTimesMs[programFrameCount - 1];
+  if (endTimeMs == 0) {
+    return 0.0;
+  }
+
+  unsigned long elapsedMs = programPlaying
+    ? millis() - programStartMillis
+    : programPausedElapsedMs;
+  unsigned long fullLoopMs = endTimeMs * 2;
+  unsigned long loopElapsedMs = elapsedMs % fullLoopMs;
+
+  if (loopElapsedMs <= endTimeMs) {
+    return (float)loopElapsedMs;
+  }
+
+  return (float)(fullLoopMs - loopElapsedMs);
+}
+
+float getProgramDisplacementDegrees(int row, int col) {
+  if (!programReady || programFrameCount == 0) {
+    return 0.0;
+  }
+
+  int cellIndex = row * GRID_COLS + col;
+  if (programFrameCount == 1) {
+    return (float)programFrames[0][cellIndex];
+  }
+
+  float playbackTimeMs = getProgramPlaybackTimeMs();
+
+  if (playbackTimeMs <= programFrameTimesMs[0]) {
+    return (float)programFrames[0][cellIndex];
+  }
+
+  for (int index = 0; index < programFrameCount - 1; index += 1) {
+    unsigned long startMs = programFrameTimesMs[index];
+    unsigned long endMs = programFrameTimesMs[index + 1];
+
+    if (playbackTimeMs <= endMs) {
+      float spanMs = (float)(endMs - startMs);
+      if (spanMs < 1.0) {
+        spanMs = 1.0;
+      }
+      float t = (playbackTimeMs - startMs) / spanMs;
+      float startValue = (float)programFrames[index][cellIndex];
+      float endValue = (float)programFrames[index + 1][cellIndex];
+      return startValue + ((endValue - startValue) * t);
+    }
+  }
+
+  return (float)programFrames[programFrameCount - 1][cellIndex];
+}
+
 float getPatternDisplacementDegrees(PatternMode pattern, int row, int col, float timeSec) {
   if (pattern == PATTERN_FLAT) {
     return 0.0;
+  }
+
+  if (pattern == PATTERN_PROGRAM) {
+    return getProgramDisplacementDegrees(row, col);
   }
 
   if (pattern == PATTERN_UI_FRAME) {
@@ -155,6 +233,43 @@ void clearUiFrame() {
       uiFrameDisplacementDegrees[row][col] = 0.0;
     }
   }
+}
+
+void resetProgram() {
+  expectedProgramFrameCount = 0;
+  programFrameCount = 0;
+  programReady = false;
+  programPlaying = false;
+  programStartMillis = 0;
+  programPausedElapsedMs = 0;
+
+  for (int index = 0; index < MAX_PROGRAM_FRAMES; index += 1) {
+    programFrameReceived[index] = false;
+    programFrameTimesMs[index] = 0;
+  }
+}
+
+void updateProgramReady() {
+  if (expectedProgramFrameCount <= 0 || expectedProgramFrameCount > MAX_PROGRAM_FRAMES) {
+    programReady = false;
+    return;
+  }
+
+  for (int index = 0; index < expectedProgramFrameCount; index += 1) {
+    if (!programFrameReceived[index]) {
+      programReady = false;
+      return;
+    }
+
+    if (index > 0 && programFrameTimesMs[index] < programFrameTimesMs[index - 1]) {
+      programReady = false;
+      badProgramCommandCount += 1;
+      return;
+    }
+  }
+
+  programFrameCount = expectedProgramFrameCount;
+  programReady = true;
 }
 
 bool isUnsignedNumber(String token) {
@@ -253,6 +368,118 @@ bool handleFrameCommand(String line) {
   return true;
 }
 
+bool handleProgramCommand(String line) {
+  String lowerLine = line;
+  lowerLine.toLowerCase();
+
+  if (!lowerLine.startsWith("prog ")) {
+    return false;
+  }
+
+  if (lowerLine == "prog clear") {
+    resetProgram();
+    return true;
+  }
+
+  if (lowerLine.startsWith("prog begin ")) {
+    int requestedFrameCount = lowerLine.substring(11).toInt();
+    resetProgram();
+
+    if (requestedFrameCount < 1 || requestedFrameCount > MAX_PROGRAM_FRAMES) {
+      badProgramCommandCount += 1;
+      return true;
+    }
+
+    expectedProgramFrameCount = requestedFrameCount;
+    return true;
+  }
+
+  if (lowerLine.startsWith("prog frame ")) {
+    String payload = line.substring(11);
+    int spaceIndex = payload.indexOf(' ');
+
+    if (spaceIndex == -1) {
+      badProgramCommandCount += 1;
+      return true;
+    }
+
+    int frameIndex = payload.substring(0, spaceIndex).toInt();
+    String timeAndValues = payload.substring(spaceIndex + 1);
+    int separatorIndex = timeAndValues.indexOf(':');
+
+    if (
+      separatorIndex == -1 ||
+      frameIndex < 0 ||
+      frameIndex >= MAX_PROGRAM_FRAMES ||
+      expectedProgramFrameCount < 1 ||
+      frameIndex >= expectedProgramFrameCount
+    ) {
+      badProgramCommandCount += 1;
+      return true;
+    }
+
+    unsigned long timeMs = (unsigned long)timeAndValues.substring(0, separatorIndex).toInt();
+    float nextFrame[GRID_ROWS][GRID_COLS];
+
+    if (!parseFramePayload(timeAndValues.substring(separatorIndex + 1), nextFrame)) {
+      badProgramCommandCount += 1;
+      return true;
+    }
+
+    programFrameTimesMs[frameIndex] = timeMs;
+    for (int row = 0; row < GRID_ROWS; row += 1) {
+      for (int col = 0; col < GRID_COLS; col += 1) {
+        int cellIndex = row * GRID_COLS + col;
+        programFrames[frameIndex][cellIndex] = (byte)constrain((int)round(nextFrame[row][col]), 0, (int)WAVE_AMPLITUDE_DEGREES);
+      }
+    }
+
+    programFrameReceived[frameIndex] = true;
+    goodProgramFrameCount += 1;
+    updateProgramReady();
+    return true;
+  }
+
+  if (lowerLine == "prog play") {
+    if (programReady) {
+      programPausedElapsedMs = 0;
+      programStartMillis = millis();
+      programPlaying = true;
+      currentPattern = PATTERN_PROGRAM;
+    } else {
+      badProgramCommandCount += 1;
+    }
+    return true;
+  }
+
+  if (lowerLine == "prog pause") {
+    if (currentPattern == PATTERN_PROGRAM && programPlaying) {
+      programPausedElapsedMs = millis() - programStartMillis;
+      programPlaying = false;
+    }
+    return true;
+  }
+
+  if (lowerLine == "prog resume") {
+    if (programReady && currentPattern == PATTERN_PROGRAM) {
+      programStartMillis = millis() - programPausedElapsedMs;
+      programPlaying = true;
+    }
+    return true;
+  }
+
+  if (lowerLine == "prog stop") {
+    programPlaying = false;
+    programPausedElapsedMs = 0;
+    clearUiFrame();
+    currentPattern = PATTERN_FLAT;
+    return true;
+  }
+
+  badProgramCommandCount += 1;
+  return true;
+}
+
 void printStatus() {
   Serial.println("---- Wall Controller Status ----");
   Serial.print("Pattern: ");
@@ -267,6 +494,16 @@ void printStatus() {
   Serial.println(goodFrameCount);
   Serial.print("Bad UI frames ignored: ");
   Serial.println(badFrameCount);
+  Serial.print("Program ready: ");
+  Serial.println(programReady ? "yes" : "no");
+  Serial.print("Program frames: ");
+  Serial.print(programFrameCount);
+  Serial.print(" / ");
+  Serial.println(expectedProgramFrameCount);
+  Serial.print("Good program frames: ");
+  Serial.println(goodProgramFrameCount);
+  Serial.print("Bad program commands ignored: ");
+  Serial.println(badProgramCommandCount);
 }
 
 void printHelp() {
@@ -276,16 +513,14 @@ void printHelp() {
   Serial.println("  uiuc             - pulse UIUC letters");
   Serial.println("  flat             - hold all servos at calibrated zero");
   Serial.println("  frame:<64 vals>  - UI frame, row-major positive degrees 0..28");
+  Serial.println("  prog begin <n>   - begin uploaded keyframe program");
+  Serial.println("  prog frame <i> <ms>:<64 vals>");
+  Serial.println("  prog play|pause|resume|stop|clear");
   Serial.println("  status           - show controller state");
   Serial.println("  help             - show commands");
 }
 
-void handleSerialCommands() {
-  if (!Serial.available()) {
-    return;
-  }
-
-  String line = Serial.readStringUntil('\n');
+void processSerialLine(String line) {
   line.trim();
 
   if (line.length() == 0) {
@@ -293,6 +528,10 @@ void handleSerialCommands() {
   }
 
   if (handleFrameCommand(line)) {
+    return;
+  }
+
+  if (handleProgramCommand(line)) {
     return;
   }
 
@@ -340,6 +579,31 @@ void handleSerialCommands() {
   printHelp();
 }
 
+void handleSerialCommands() {
+  while (Serial.available()) {
+    char incoming = (char)Serial.read();
+
+    if (incoming == '\r') {
+      continue;
+    }
+
+    if (incoming == '\n') {
+      serialLineBuffer[serialLineLength] = '\0';
+      processSerialLine(String(serialLineBuffer));
+      serialLineLength = 0;
+      continue;
+    }
+
+    if (serialLineLength < SERIAL_LINE_MAX - 1) {
+      serialLineBuffer[serialLineLength] = incoming;
+      serialLineLength += 1;
+    } else {
+      serialLineLength = 0;
+      badFrameCount += 1;
+    }
+  }
+}
+
 void responsiveDelay(unsigned long durationMs) {
   unsigned long startMs = millis();
   while (millis() - startMs < durationMs) {
@@ -367,6 +631,7 @@ void setup() {
 
   initializeCenters();
   clearUiFrame();
+  resetProgram();
   currentPattern = PATTERN_FLAT;
   driveCurrentPattern(0.0);
 
