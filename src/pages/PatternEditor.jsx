@@ -20,7 +20,7 @@ function buildRectSelection(start, end) {
 }
 
 export default function PatternEditor() {
-  const { currentExperiment, setGrid, updateExperiment, saveCurrentExperiment } = useExperiment();
+  const { currentExperiment, setGrid, updateExperiment } = useExperiment();
   const [paintValue, setPaintValue] = useState(0.8);
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectedCells, setSelectedCells] = useState(new Set());
@@ -83,7 +83,6 @@ export default function PatternEditor() {
           </div>
           <div className="saved-actions">
             <button onClick={() => updateExperiment({ grid: cloneGrid(grid) })}>Apply to Current Experiment</button>
-            <button className="secondary" onClick={() => saveCurrentExperiment('Custom Pattern Snapshot')}>Save as Custom Pattern</button>
           </div>
           <div className="saved-actions">
             <button className="secondary" onClick={() => {

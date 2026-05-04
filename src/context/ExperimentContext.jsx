@@ -28,13 +28,43 @@ function getDefaults() {
   };
 }
 
+const UIUC_WAVE_NOTES = 'Sine-wave track over active nodes spelling UIUC.';
+const LEGACY_DEMO_NOTES = 'Browser-only heatmap preview pattern for recording UI demos.';
+
+function refreshStoredSeedExperiment(experiment) {
+  const cloned = cloneExperiment(experiment);
+
+  if (
+    cloned.name === 'UIUC Wave' &&
+    cloned.notes === UIUC_WAVE_NOTES &&
+    (cloned.id === 'current-experiment' || cloned.id === 'saved-uiuc-wave')
+  ) {
+    const seed = cloned.id === 'saved-uiuc-wave'
+      ? seedSavedExperiments.find((item) => item.id === 'saved-uiuc-wave') ?? defaultExperiment
+      : defaultExperiment;
+
+    return cloneExperiment({
+      ...seed,
+      id: cloned.id,
+      savedAt: cloned.savedAt ?? seed.savedAt,
+    });
+  }
+
+  if (cloned.id === 'current-experiment' && cloned.name === 'Device-Free Heatmap Demo' && cloned.notes === LEGACY_DEMO_NOTES) {
+    return cloneExperiment(defaultExperiment);
+  }
+
+  return cloned;
+}
+
 function mergeSeedSavedExperiments(storedSavedExperiments = []) {
-  const storedById = new Set(storedSavedExperiments.map((experiment) => experiment.id));
+  const refreshedStoredExperiments = storedSavedExperiments.map(refreshStoredSeedExperiment);
+  const storedById = new Set(refreshedStoredExperiments.map((experiment) => experiment.id));
   return [
     ...seedSavedExperiments
       .filter((experiment) => !storedById.has(experiment.id))
       .map(cloneExperiment),
-    ...storedSavedExperiments.map(cloneExperiment),
+    ...refreshedStoredExperiments,
   ].slice(0, 16);
 }
 
@@ -60,7 +90,7 @@ function getInitialState() {
     currentExperiment: cloneExperiment(
       isLegacyBlankExperiment(stored.currentExperiment)
         ? defaults.currentExperiment
-        : stored.currentExperiment ?? defaults.currentExperiment,
+        : refreshStoredSeedExperiment(stored.currentExperiment ?? defaults.currentExperiment),
     ),
     savedExperiments: stored.savedExperiments
       ? mergeSeedSavedExperiments(stored.savedExperiments)

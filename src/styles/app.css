@@ -410,6 +410,15 @@ textarea {
   overflow: auto;
 }
 
+.import-code-input {
+  min-height: 360px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+}
+
 .numeric-control {
   display: grid;
   gap: 0.45rem;
@@ -600,17 +609,7 @@ textarea {
   color: #5a7281;
 }
 
-.save-load-panel {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.save-load-panel h3 {
-  margin: 0;
-}
-
-.saved-actions,
-.save-row {
+.saved-actions {
   display: flex;
   gap: 0.55rem;
   flex-wrap: wrap;
@@ -981,22 +980,6 @@ textarea {
 
 .hardware-panel h3 {
   margin: 0;
-}
-
-.new-experiment-row {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.new-experiment-row select {
-  flex: 1 1 240px;
-}
-
-.saved-experiment-list {
-  display: grid;
-  gap: 0.75rem;
 }
 
 .saved-exp-card {

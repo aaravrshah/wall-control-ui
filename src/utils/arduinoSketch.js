@@ -21,6 +21,199 @@ function numberOrDefault(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function commentValue(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function formatSketchMetadata(experiment, tracks) {
+  return [
+    '// WALL_CONTROL_UI_EXPORT_VERSION: 1',
+    `// WALL_CONTROL_UI_EXPERIMENT_NAME: ${commentValue(experiment.name || 'Imported Experiment')}`,
+    ...tracks.map((track, index) => `// WALL_CONTROL_UI_TRACK_${index}_NAME: ${commentValue(track.name || `Track ${index + 1}`)}`),
+  ].join('\n');
+}
+
+function metadataValue(sketch, key) {
+  const match = sketch.match(new RegExp(`^\\s*//\\s*${key}:\\s*(.*)$`, 'm'));
+  return match?.[1]?.trim() ?? '';
+}
+
+function parseNumbers(value) {
+  return [...String(value).matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+}
+
+function extractBalancedBlock(text, braceStart, label) {
+  let depth = 0;
+  for (let index = braceStart; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '{') {
+      depth += 1;
+    }
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(braceStart + 1, index);
+      }
+    }
+  }
+  throw new Error(`Could not read ${label}.`);
+}
+
+function extractInitializer(sketch, declarationPattern, label) {
+  const match = declarationPattern.exec(sketch);
+  if (!match) {
+    throw new Error(`Could not find ${label}.`);
+  }
+
+  const braceStart = sketch.indexOf('{', match.index);
+  if (braceStart < 0) {
+    throw new Error(`Could not read ${label}.`);
+  }
+
+  return extractBalancedBlock(sketch, braceStart, label);
+}
+
+function extractFunctionBody(sketch, functionName) {
+  const match = new RegExp(`\\b(?:bool|float)\\s+${functionName}\\s*\\([^)]*\\)\\s*\\{`).exec(sketch);
+  if (!match) {
+    return null;
+  }
+
+  const braceStart = sketch.indexOf('{', match.index);
+  return extractBalancedBlock(sketch, braceStart, functionName);
+}
+
+function readRequiredNumber(sketch, pattern, label) {
+  const match = pattern.exec(sketch);
+  if (!match) {
+    throw new Error(`Could not find ${label}.`);
+  }
+
+  return numberOrDefault(match[1], 0);
+}
+
+function readOptionalNumber(sketch, pattern, fallback = 0) {
+  const match = pattern.exec(sketch);
+  return match ? numberOrDefault(match[1], fallback) : fallback;
+}
+
+function parseBaseGrid(sketch) {
+  const body = extractInitializer(
+    sketch,
+    /const\s+float\s+BASE_GRID_MM\s*\[[^\]]+\]\s*\[[^\]]+\]\s*=/,
+    'base grid',
+  );
+  const rows = [...body.matchAll(/\{([^{}]+)\}/g)].map((match) => parseNumbers(match[1]));
+
+  if (rows.length !== GRID_ROWS || rows.some((row) => row.length !== GRID_COLS)) {
+    throw new Error(`Expected a ${GRID_ROWS} x ${GRID_COLS} base grid.`);
+  }
+
+  return rows;
+}
+
+function parseTrackTargets(sketch, index) {
+  const body = extractFunctionBody(sketch, `isTrack${index}Target`);
+  if (!body) {
+    return [];
+  }
+
+  return [...body.matchAll(/row\s*==\s*(\d+)\s*&&\s*col\s*==\s*(\d+)/g)]
+    .map((match) => `${Number(match[1])}-${Number(match[2])}`);
+}
+
+function parseTrackArray(sketch, index, name, label) {
+  const body = extractInitializer(
+    sketch,
+    new RegExp(`const\\s+(?:float|int)\\s+TRACK_${index}_${name}\\s*(?:\\[[^\\]]*\\])*\\s*=`),
+    label,
+  );
+  return parseNumbers(body);
+}
+
+function parseWaveTrack(sketch, index, targets, baseTrackName, maxDisplacementMm) {
+  const wave = {
+    baselineMm: readRequiredNumber(sketch, new RegExp(`const\\s+float\\s+TRACK_${index}_BASELINE_MM\\s*=\\s*(-?\\d+(?:\\.\\d+)?)`), `track ${index + 1} baseline`),
+    amplitudeMm: readRequiredNumber(sketch, new RegExp(`const\\s+float\\s+TRACK_${index}_AMPLITUDE_MM\\s*=\\s*(-?\\d+(?:\\.\\d+)?)`), `track ${index + 1} amplitude`),
+    frequencyHz: readRequiredNumber(sketch, new RegExp(`const\\s+float\\s+TRACK_${index}_FREQUENCY_HZ\\s*=\\s*(-?\\d+(?:\\.\\d+)?)`), `track ${index + 1} frequency`),
+    phaseLagDegrees: readOptionalNumber(sketch, new RegExp(`const\\s+float\\s+TRACK_${index}_PHASE_LAG_DEGREES\\s*=\\s*(-?\\d+(?:\\.\\d+)?)`), 0),
+    cycles: readOptionalNumber(sketch, new RegExp(`const\\s+float\\s+TRACK_${index}_CYCLES\\s*=\\s*(-?\\d+(?:\\.\\d+)?)`), 0),
+  };
+
+  return [{
+    id: `imported-wave-${index}`,
+    name: baseTrackName,
+    mode: 'wave',
+    targetCellKeys: targets,
+    points: [],
+    wave: normalizeWaveSettings(wave, maxDisplacementMm),
+  }];
+}
+
+function parsePointTrack(sketch, index, targets, baseTrackName, maxDisplacementMm) {
+  const pointCount = readRequiredNumber(sketch, new RegExp(`const\\s+int\\s+TRACK_${index}_POINT_COUNT\\s*=\\s*(\\d+)`), `track ${index + 1} point count`);
+  const times = parseTrackArray(sketch, index, 'TIMES', `track ${index + 1} times`);
+  const displacements = parseTrackArray(sketch, index, 'DISPLACEMENTS_MM', `track ${index + 1} displacements`);
+  const interpolation = parseTrackArray(sketch, index, 'INTERPOLATION', `track ${index + 1} interpolation`);
+
+  return {
+    id: `imported-points-${index}`,
+    name: baseTrackName,
+    mode: 'points',
+    targetCellKeys: targets,
+    points: Array.from({ length: pointCount }, (_, pointIndex) => ({
+      id: `imported-${index}-point-${pointIndex}`,
+      timeSec: Math.max(0, numberOrDefault(times[pointIndex], 0)),
+      displacement: clamp(numberOrDefault(displacements[pointIndex], 0), 0, maxDisplacementMm),
+      interpolationToNext: interpolation[pointIndex] === 1 ? 'sine' : 'linear',
+    })),
+  };
+}
+
+export function parseArduinoSketch(sketch) {
+  const source = String(sketch ?? '');
+  const maxDisplacementMm = Math.max(0.1, readRequiredNumber(
+    source,
+    /const\s+float\s+MAX_DISPLACEMENT_MM\s*=\s*(-?\d+(?:\.\d+)?)/,
+    'maximum displacement',
+  ));
+  const servoMaxDegrees = clamp(readRequiredNumber(
+    source,
+    /const\s+float\s+SERVO_MAX_DEGREES\s*=\s*(-?\d+(?:\.\d+)?)/,
+    'servo range',
+  ), 1, 45);
+  const grid = parseBaseGrid(source);
+  const trackIndices = [...new Set([...source.matchAll(/TRACK_(\d+)_/g)].map((match) => Number(match[1])))]
+    .sort((left, right) => left - right);
+
+  const motionTracks = trackIndices.flatMap((index) => {
+    const targets = parseTrackTargets(source, index);
+    const baseTrackName = metadataValue(source, `WALL_CONTROL_UI_TRACK_${index}_NAME`) || `Track ${index + 1}`;
+    const isWave = new RegExp(`TRACK_${index}_BASELINE_MM`).test(source);
+    const isPoint = new RegExp(`TRACK_${index}_POINT_COUNT`).test(source);
+
+    if (isWave) {
+      return parseWaveTrack(source, index, targets, baseTrackName, maxDisplacementMm);
+    }
+
+    if (isPoint) {
+      return [parsePointTrack(source, index, targets, baseTrackName, maxDisplacementMm)];
+    }
+
+    return [];
+  });
+
+  return {
+    id: 'current-experiment',
+    name: metadataValue(source, 'WALL_CONTROL_UI_EXPERIMENT_NAME') || 'Imported Arduino Sketch',
+    grid,
+    motionTracks,
+    notes: 'Imported from Arduino sketch.',
+    maxDisplacementMm,
+    servoMaxDegrees,
+  };
+}
+
 function formatOffsets() {
   const rows = [];
   for (let index = 0; index < CENTER_OFFSET_DEGREES.length; index += 16) {
@@ -101,18 +294,6 @@ float track${index}DisplacementMm(int row, int col, float timeSec) {
 }`;
 }
 
-function formatSelectionPhaseIndex(track, index) {
-  const conditions = (track.targetCellKeys ?? []).map((key, targetIndex) => {
-    const [row, col] = key.split('-').map(Number);
-    return `  if (row == ${row} && col == ${col}) return ${targetIndex};`;
-  });
-
-  return `float getTrack${index}PhaseStepIndex(int row, int col) {
-${conditions.join('\n')}
-  return 0;
-}`;
-}
-
 function formatWaveTrack(track, index, maxDisplacementMm) {
   const wave = normalizeWaveSettings(track.wave, maxDisplacementMm);
   return `${formatCellPredicate(track, `isTrack${index}Target`)}
@@ -120,11 +301,8 @@ function formatWaveTrack(track, index, maxDisplacementMm) {
 const float TRACK_${index}_BASELINE_MM = ${formatNumber(wave.baselineMm, 3)};
 const float TRACK_${index}_AMPLITUDE_MM = ${formatNumber(wave.amplitudeMm, 3)};
 const float TRACK_${index}_FREQUENCY_HZ = ${formatNumber(wave.frequencyHz, 3)};
-const float TRACK_${index}_PHASE_DEGREES = ${formatNumber(wave.phaseDegrees, 3)};
 const float TRACK_${index}_PHASE_LAG_DEGREES = ${formatNumber(wave.phaseLagDegrees, 3)};
 const float TRACK_${index}_CYCLES = ${formatNumber(wave.cycles, 3)};
-
-${formatSelectionPhaseIndex(track, index)}
 
 float track${index}DisplacementMm(int row, int col, float timeSec) {
   float durationSec = TRACK_${index}_CYCLES > 0.0 ? TRACK_${index}_CYCLES / TRACK_${index}_FREQUENCY_HZ : -1.0;
@@ -132,8 +310,7 @@ float track${index}DisplacementMm(int row, int col, float timeSec) {
     return TRACK_${index}_BASELINE_MM;
   }
 
-  float phaseDegrees = TRACK_${index}_PHASE_DEGREES + (TRACK_${index}_PHASE_LAG_DEGREES * getTrack${index}PhaseStepIndex(row, col));
-  float phaseRadians = (2.0 * PI * TRACK_${index}_FREQUENCY_HZ * timeSec) + (phaseDegrees * PI / 180.0);
+  float phaseRadians = (2.0 * PI * TRACK_${index}_FREQUENCY_HZ * timeSec) + (TRACK_${index}_PHASE_LAG_DEGREES * PI / 180.0);
   return constrain(TRACK_${index}_BASELINE_MM + (TRACK_${index}_AMPLITUDE_MM * positiveWave(phaseRadians)), 0.0, MAX_DISPLACEMENT_MM);
 }`;
 }
@@ -176,6 +353,8 @@ export function generateArduinoSketch(experiment) {
 
   return `#include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+
+${formatSketchMetadata(experiment, tracks)}
 
 Adafruit_PWMServoDriver pwmBoards[] = {
   Adafruit_PWMServoDriver(0x40),  // Physical row 2

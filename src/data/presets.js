@@ -25,10 +25,10 @@ function createCheckerGrid() {
 function createUiucGrid(maxValue = 6) {
   const grid = createEmptyGrid(0);
   const rows = [
-    [0, 2, 4, 5, 6, 8, 10, 12, 13, 14, 15],
+    [0, 2, 4, 5, 6, 8, 10, 12, 13, 14],
     [0, 2, 5, 8, 10, 12],
     [0, 2, 5, 8, 10, 12],
-    [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15],
+    [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14],
   ];
 
   rows.forEach((cols, row) => {
@@ -40,17 +40,36 @@ function createUiucGrid(maxValue = 6) {
   return grid;
 }
 
-function getActiveKeysColumnMajor(grid) {
-  const keys = [];
+function getActiveKeysByColumn(grid) {
+  const groups = [];
   for (let col = 0; col < GRID_COLS; col += 1) {
+    const keys = [];
     for (let row = 0; row < GRID_ROWS; row += 1) {
       if (Number(grid[row][col]) > 0.01) {
         keys.push(`${row}-${col}`);
       }
     }
+    if (keys.length > 0) {
+      groups.push({ col, keys });
+    }
   }
-  return keys;
+  return groups;
 }
+
+const UIUC_COLUMN_PHASE_LAGS = {
+  0: 0,
+  1: 10,
+  2: 20,
+  4: 40,
+  5: 50,
+  6: 60,
+  8: 80,
+  9: 90,
+  10: 100,
+  12: 120,
+  13: 130,
+  14: 140,
+};
 
 function clonePoints(points = []) {
   return points.map((point) => ({
@@ -74,23 +93,22 @@ const centerBumpGrid = createCenterBumpGrid();
 const leftRampGrid = createRampGrid();
 const checkerGrid = createCheckerGrid();
 const uiucWaveGrid = createUiucGrid();
-const uiucWaveMotionTracks = [
+const uiucWaveMotionTracks = getActiveKeysByColumn(uiucWaveGrid).map(({ col, keys }) =>
   cloneTrack({
-    id: 'track-uiuc-wave',
-    name: 'UIUC Sine Wave',
+    id: `track-uiuc-wave-col-${col}`,
+    name: `UIUC Column ${col + 1}`,
     mode: 'wave',
-    targetCellKeys: getActiveKeysColumnMajor(uiucWaveGrid),
+    targetCellKeys: keys,
     points: [],
     wave: {
       baselineMm: 0,
       amplitudeMm: 6,
       frequencyHz: 0.45,
-      phaseDegrees: 0,
-      phaseLagDegrees: 10,
+      phaseLagDegrees: UIUC_COLUMN_PHASE_LAGS[col] ?? 0,
       cycles: 0,
     },
   }),
-];
+);
 
 export const defaultCalibration = {
   offsetGrid: createEmptyGrid(0),

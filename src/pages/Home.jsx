@@ -3,25 +3,31 @@ import { Link } from 'react-router-dom';
 import ExperimentManagerModal from '../components/ExperimentManagerModal';
 import ExperimentPreview from '../components/ExperimentPreview';
 import { useExperiment } from '../context/ExperimentContext';
-import { starterShapes } from '../data/presets';
-import { generateArduinoSketch, sampleGeneratedSketchGrid } from '../utils/arduinoSketch';
-import { createWaveTrack, getTrackMode } from '../utils/patterns';
+import { generateArduinoSketch, parseArduinoSketch, sampleGeneratedSketchGrid } from '../utils/arduinoSketch';
+import { getTrackMode } from '../utils/patterns';
 
-const demoPreviewShape = starterShapes.find((shape) => shape.id === 'center-bump') ?? starterShapes[0];
+function sketchFileName(name) {
+  const slug = String(name || 'wall-control-sketch')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${slug || 'wall-control-sketch'}.ino`;
+}
 
 export default function Home() {
   const {
     currentExperiment,
-    savedExperiments,
     runState,
     updateExperiment,
     updateRunState,
-    loadSavedExperiment,
-    deleteSavedExperiment,
   } = useExperiment();
   const [frameTime, setFrameTime] = useState(runState.elapsedTime ?? 0);
   const frameTimeRef = useRef(frameTime);
   const [showExperimentManager, setShowExperimentManager] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
 
   useEffect(() => {
@@ -104,46 +110,41 @@ export default function Home() {
     setCopyStatus('');
   };
 
-  const loadDemoPreview = () => {
-    const activeKeys = new Set();
-    demoPreviewShape.grid.forEach((row, rowIndex) => {
-      row.forEach((value, colIndex) => {
-        if (Number(value) > 0.01) activeKeys.add(`${rowIndex}-${colIndex}`);
-      });
-    });
-    const demoTrack = {
-      ...createWaveTrack(activeKeys, 6, currentExperiment.maxDisplacementMm),
-      id: `track-demo-${Date.now()}`,
-      name: 'Demo Heatmap Wave',
-      wave: {
-        baselineMm: 0,
-        amplitudeMm: 6,
-        frequencyHz: 0.65,
-        phaseDegrees: 0,
-        phaseLagDegrees: 35,
-        cycles: 0,
-      },
-    };
-
-    frameTimeRef.current = 0;
-    updateExperiment({
-      id: 'current-experiment',
-      name: 'Device-Free Heatmap Demo',
-      grid: demoPreviewShape.grid,
-      motionTracks: [demoTrack],
-      notes: 'Browser-only heatmap preview pattern for recording UI demos.',
-    });
-    setFrameTime(0);
-    updateRunState({ status: 'running', elapsedTime: 0 });
-    setCopyStatus('Loaded a demo heatmap and started browser preview. No Arduino connection needed.');
-  };
-
   const copySketch = async () => {
     try {
       await navigator.clipboard.writeText(generatedSketch);
       setCopyStatus('Copied Arduino sketch.');
     } catch (error) {
       setCopyStatus('Copy failed. Select the code text manually.');
+    }
+  };
+
+  const downloadSketch = () => {
+    const blob = new Blob([generatedSketch], { type: 'text/x-arduino' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = sketchFileName(currentExperiment.name);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setCopyStatus('Downloaded Arduino sketch.');
+  };
+
+  const importSketch = () => {
+    try {
+      const importedExperiment = parseArduinoSketch(importText);
+      frameTimeRef.current = 0;
+      updateExperiment(importedExperiment);
+      updateRunState({ status: 'stopped', elapsedTime: 0 });
+      setFrameTime(0);
+      setShowImportModal(false);
+      setImportText('');
+      setImportError('');
+      setCopyStatus('Imported Arduino sketch.');
+    } catch (error) {
+      setImportError(error.message || 'Could not import this Arduino sketch.');
     }
   };
 
@@ -158,14 +159,15 @@ export default function Home() {
               The generated sketch uses the actuator grid plus any point or wave tracks from the editor.
             </p>
             <div className="saved-actions">
-              <button className="secondary" onClick={() => setShowExperimentManager(true)}>Choose Experiment</button>
+              <button className="secondary" onClick={() => setShowExperimentManager(true)}>New / Template</button>
               <Link to="/actuators" className="secondary-link">Edit Grid</Link>
             </div>
           </div>
           <div className="run-controls">
             <button onClick={copySketch}>Copy Arduino Code</button>
+            <button className="secondary" onClick={downloadSketch}>Download .ino</button>
+            <button className="secondary" onClick={() => setShowImportModal(true)}>Import .ino</button>
             <button className="secondary" onClick={startPreview}>Preview</button>
-            <button className="secondary" onClick={loadDemoPreview}>Demo Heatmap</button>
             <button className="secondary" onClick={pausePreview}>Pause</button>
             <button className="danger" onClick={resetPreview}>Reset</button>
           </div>
@@ -203,9 +205,8 @@ export default function Home() {
             <p><strong>Generated Safety:</strong> calibrated centers, mm-to-servo scaling, and PWM clamps</p>
           </div>
           {activeActuatorCount === 0 ? (
-            <div className="warning warning-with-action">
+            <div className="warning">
               <span>This grid is flat, so there is no heatmap motion to record yet.</span>
-              <button className="secondary compact-button" onClick={loadDemoPreview}>Load Demo Heatmap</button>
             </div>
           ) : null}
           <div className="saved-actions">
@@ -220,7 +221,11 @@ export default function Home() {
             <h2>Arduino Sketch</h2>
             <p>Generated from the actuator grid and selection motion tracks.</p>
           </div>
-          <button onClick={copySketch}>Copy Code</button>
+          <div className="saved-actions">
+            <button className="secondary" onClick={() => setShowImportModal(true)}>Import .ino</button>
+            <button className="secondary" onClick={downloadSketch}>Download .ino</button>
+            <button onClick={copySketch}>Copy Code</button>
+          </div>
         </div>
         <textarea
           className="code-output"
@@ -233,20 +238,40 @@ export default function Home() {
       <ExperimentManagerModal
         open={showExperimentManager}
         currentExperiment={currentExperiment}
-        savedExperiments={savedExperiments}
         onClose={() => setShowExperimentManager(false)}
-        onLoadSaved={(id) => {
-          loadSavedExperiment(id);
-          setShowExperimentManager(false);
-          setCopyStatus('');
-        }}
-        onDeleteSaved={deleteSavedExperiment}
         onCreateNew={(experiment) => {
           updateExperiment(experiment);
           setShowExperimentManager(false);
           setCopyStatus('');
         }}
       />
+      {showImportModal ? (
+        <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
+          <div className="modal-card wide" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header-row">
+              <div>
+                <h3>Import Arduino Sketch</h3>
+                <p>Paste a sketch generated by this UI.</p>
+              </div>
+              <button className="secondary" onClick={() => setShowImportModal(false)}>Close</button>
+            </div>
+            <textarea
+              className="import-code-input"
+              value={importText}
+              onChange={(event) => {
+                setImportText(event.target.value);
+                setImportError('');
+              }}
+              spellCheck={false}
+            />
+            {importError ? <div className="warning">{importError}</div> : null}
+            <div className="saved-actions">
+              <button onClick={importSketch} disabled={!importText.trim()}>Import Sketch</button>
+              <button className="secondary" onClick={() => setImportText('')}>Clear</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

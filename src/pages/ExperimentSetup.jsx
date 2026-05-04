@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SectionHeader from '../components/SectionHeader';
 import TimelinePlot from '../components/TimelinePlot';
 import WallGrid from '../components/WallGrid';
@@ -114,25 +114,19 @@ export default function ExperimentSetup() {
     setGrid,
     updateExperiment,
     replaceExperiment,
-    saveCurrentExperiment,
     canUndo,
     canRedo,
     undoExperiment,
     redoExperiment,
-    recordHistorySnapshot,
   } = useExperiment();
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectedCells, setSelectedCells] = useState(new Set(['0-0']));
   const [selectedPointId, setSelectedPointId] = useState(null);
-  const [sliderValue, setSliderValue] = useState(null);
-  const [saveName, setSaveName] = useState('');
   const [rowSelection, setRowSelection] = useState(0);
   const [columnSelection, setColumnSelection] = useState(0);
-  const dragSnapshotRef = useRef(null);
 
   const grid = useMemo(() => cloneGrid(currentExperiment.grid), [currentExperiment.grid]);
   const selectedDisplacement = averageSelectedDisplacement(grid, selectedCells);
-  const displayedDisplacement = sliderValue ?? selectedDisplacement;
   const selectionTrackState = useMemo(
     () => resolveTrackForSelection(currentExperiment.motionTracks, selectedCells, selectedDisplacement),
     [currentExperiment.motionTracks, selectedCells, selectedDisplacement],
@@ -140,9 +134,8 @@ export default function ExperimentSetup() {
   const activeTrack = selectionTrackState.track;
   const activeTrackMode = getTrackMode(activeTrack);
   const activeWave = normalizeWaveSettings(activeTrack?.wave, currentExperiment.maxDisplacementMm);
-  const selectedPreviewCellKey = [...selectedCells][0] ?? activeTrack?.targetCellKeys?.[0] ?? null;
   const trackPreviewPoints = activeTrack
-    ? buildTrackPreviewPoints(activeTrack, currentExperiment.maxDisplacementMm, 72, selectedPreviewCellKey)
+    ? buildTrackPreviewPoints(activeTrack, currentExperiment.maxDisplacementMm, 72)
     : [];
   const trackPreviewDuration = Math.max(4, activeTrack ? getTrackDuration(activeTrack) : 12);
   const selectedPoint = activeTrack?.points.find((point) => point.id === selectedPointId) ?? null;
@@ -308,12 +301,6 @@ export default function ExperimentSetup() {
         subtitle="Refine actuator displacements and edit motion for the current selection."
       />
 
-      {currentExperiment.id.startsWith('saved-') ? (
-        <div className="callout subtle">
-          Editing saved experiment: <strong>{currentExperiment.name}</strong>
-        </div>
-      ) : null}
-
       <section className="editor-split wide">
         <section className="panel workspace-panel">
           <div className="editor-toolbar">
@@ -368,62 +355,21 @@ export default function ExperimentSetup() {
             <label>
               Displacement (mm)
               <input
-                type="range"
-                min={0}
-                max={currentExperiment.maxDisplacementMm}
-                step={0.1}
-                value={displayedDisplacement}
-                onPointerDown={() => {
-                  if (!dragSnapshotRef.current) {
-                    dragSnapshotRef.current = true;
-                    recordHistorySnapshot(currentExperiment);
-                  }
-                }}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setSliderValue(nextValue);
-                  replaceExperiment({
-                    grid: updateSelectedCells(grid, selectedCells, nextValue, currentExperiment.maxDisplacementMm),
-                  });
-                }}
-                onPointerUp={() => {
-                  setSliderValue(null);
-                  dragSnapshotRef.current = null;
-                }}
-              />
-              <input
                 type="number"
                 min={0}
                 max={currentExperiment.maxDisplacementMm}
                 step={0.1}
-                value={displayedDisplacement}
+                value={selectedDisplacement}
                 onChange={(event) =>
                   setGrid(updateSelectedCells(grid, selectedCells, Number(event.target.value), currentExperiment.maxDisplacementMm))
                 }
-                onBlur={() => setSliderValue(null)}
               />
             </label>
 
             <div className="saved-actions">
-              <button className="secondary" onClick={() => setGrid(createEmptyGrid(currentExperiment.maxDisplacementMm / 2))}>Reset All to Half Travel</button>
               <button className="secondary" onClick={() => setGrid(createEmptyGrid(0))}>Reset All to 0 mm</button>
               <button className="secondary" onClick={() => setGrid(smoothGrid(grid, currentExperiment.maxDisplacementMm).map((row) => row.map((value) => Number(value.toFixed(2)))))}>
                 Smooth
-              </button>
-            </div>
-            <div className="save-row">
-              <input
-                value={saveName}
-                onChange={(event) => setSaveName(event.target.value)}
-                placeholder="Save experiment name"
-              />
-              <button
-                onClick={() => {
-                  saveCurrentExperiment(saveName.trim());
-                  setSaveName('');
-                }}
-              >
-                Save Experiment
               </button>
             </div>
           </div>
@@ -689,30 +635,17 @@ export default function ExperimentSetup() {
                         />
                       </label>
                     ) : null}
-                    <div className="two-input-grid">
-                      <label>
-                        Phase (deg)
-                        <input
-                          type="number"
-                          min={-360}
-                          max={360}
-                          step={1}
-                          value={activeWave.phaseDegrees}
-                          onChange={(event) => updateWaveSettings({ phaseDegrees: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Phase Lag (deg)
-                        <input
-                          type="number"
-                          min={-360}
-                          max={360}
-                          step={1}
-                          value={activeWave.phaseLagDegrees}
-                          onChange={(event) => updateWaveSettings({ phaseLagDegrees: event.target.value })}
-                        />
-                      </label>
-                    </div>
+                    <label>
+                      Phase Lag (deg)
+                      <input
+                        type="number"
+                        min={0}
+                        max={360}
+                        step={1}
+                        value={activeWave.phaseLagDegrees}
+                        onChange={(event) => updateWaveSettings({ phaseLagDegrees: event.target.value })}
+                      />
+                    </label>
 
                     <TimelinePlot
                       points={trackPreviewPoints}
