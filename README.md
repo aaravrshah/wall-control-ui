@@ -45,15 +45,14 @@ This v1 prototype **does not** include:
 - Real actuator telemetry
 - Real-time fault handling logic
 
-Wall-state previews remain simulated in the UI. The Home page generates a complete `.ino` sketch based on the tested Arduino pattern code, the current grid, and operator-selected wave parameters.
+Wall-state previews remain simulated in the UI. The actuator editor defines the grid plus per-selection point or wave tracks, and the Home page generates a complete `.ino` sketch from that design.
 
 ## Arduino workflow
 
 The main control page now includes an **Arduino Sketch** panel that can:
 
-- Preview the generated 4 x 16 wave pattern
-- Tune frequency, amplitude, column phase, row phase, global phase, and refresh delay
-- Convert the current actuator grid into per-cell amplitude multipliers
+- Preview the generated 4 x 16 actuator design without connecting hardware
+- Convert the current actuator grid and selection motion tracks into local Arduino motion logic
 - Generate a full Arduino sketch that includes all 64 servos, calibrated centers, row/column mapping, board direction signs, and PWM clamps
 
 Important setup notes:

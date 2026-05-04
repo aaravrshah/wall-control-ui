@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { cloneExperiment, defaultExperiment, suggestedExperiments } from '../data/presets';
+import { blankExperiment, cloneExperiment, suggestedExperiments } from '../data/presets';
 
 export default function ExperimentManagerModal({
   open,
@@ -54,7 +54,7 @@ export default function ExperimentManagerModal({
               <div className="saved-actions">
                 <button
                   onClick={() => {
-                    onCreateNew(cloneExperiment({ ...defaultExperiment, id: 'current-experiment', name: 'New Experiment' }));
+                    onCreateNew(cloneExperiment({ ...blankExperiment, id: 'current-experiment', name: 'New Experiment' }));
                     setNewMode(null);
                   }}
                 >

@@ -22,6 +22,36 @@ function createCheckerGrid() {
   );
 }
 
+function createUiucGrid(maxValue = 6) {
+  const grid = createEmptyGrid(0);
+  const rows = [
+    [0, 2, 4, 5, 6, 8, 10, 12, 13, 14, 15],
+    [0, 2, 5, 8, 10, 12],
+    [0, 2, 5, 8, 10, 12],
+    [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15],
+  ];
+
+  rows.forEach((cols, row) => {
+    cols.forEach((col) => {
+      grid[row][col] = maxValue;
+    });
+  });
+
+  return grid;
+}
+
+function getActiveKeysColumnMajor(grid) {
+  const keys = [];
+  for (let col = 0; col < GRID_COLS; col += 1) {
+    for (let row = 0; row < GRID_ROWS; row += 1) {
+      if (Number(grid[row][col]) > 0.01) {
+        keys.push(`${row}-${col}`);
+      }
+    }
+  }
+  return keys;
+}
+
 function clonePoints(points = []) {
   return points.map((point) => ({
     ...point,
@@ -32,8 +62,10 @@ function clonePoints(points = []) {
 function cloneTrack(track) {
   return {
     ...track,
+    mode: track.mode ?? 'points',
     targetCellKeys: [...track.targetCellKeys],
     points: clonePoints(track.points),
+    wave: track.wave ? { ...track.wave } : undefined,
   };
 }
 
@@ -41,12 +73,30 @@ const neutralGrid = createEmptyGrid(0);
 const centerBumpGrid = createCenterBumpGrid();
 const leftRampGrid = createRampGrid();
 const checkerGrid = createCheckerGrid();
+const uiucWaveGrid = createUiucGrid();
+const uiucWaveMotionTracks = [
+  cloneTrack({
+    id: 'track-uiuc-wave',
+    name: 'UIUC Sine Wave',
+    mode: 'wave',
+    targetCellKeys: getActiveKeysColumnMajor(uiucWaveGrid),
+    points: [],
+    wave: {
+      baselineMm: 0,
+      amplitudeMm: 6,
+      frequencyHz: 0.45,
+      phaseDegrees: 0,
+      phaseLagDegrees: 10,
+      cycles: 0,
+    },
+  }),
+];
 
 export const defaultCalibration = {
   offsetGrid: createEmptyGrid(0),
 };
 
-export const defaultExperiment = {
+export const blankExperiment = {
   id: 'current-experiment',
   name: 'Baseline Flat',
   grid: cloneGrid(neutralGrid),
@@ -56,7 +106,27 @@ export const defaultExperiment = {
   servoMaxDegrees: 20,
 };
 
+export const defaultExperiment = {
+  id: 'current-experiment',
+  name: 'UIUC Wave',
+  grid: cloneGrid(uiucWaveGrid),
+  motionTracks: uiucWaveMotionTracks.map(cloneTrack),
+  notes: 'Sine-wave track over active nodes spelling UIUC.',
+  maxDisplacementMm: 7,
+  servoMaxDegrees: 20,
+};
+
 export const seedSavedExperiments = [
+  {
+    id: 'saved-uiuc-wave',
+    name: 'UIUC Wave',
+    savedAt: '2026-05-04T00:00:00.000Z',
+    grid: cloneGrid(uiucWaveGrid),
+    motionTracks: uiucWaveMotionTracks.map(cloneTrack),
+    notes: 'Sine-wave track over active nodes spelling UIUC.',
+    maxDisplacementMm: 7,
+    servoMaxDegrees: 20,
+  },
   {
     id: 'saved-1',
     name: 'Center Bump',
@@ -78,10 +148,20 @@ export const starterShapes = [
 
 export const suggestedExperiments = [
   {
+    id: 'suggested-uiuc-wave',
+    name: 'UIUC Wave',
+    experiment: {
+      ...defaultExperiment,
+      name: 'UIUC Wave',
+      grid: cloneGrid(uiucWaveGrid),
+      motionTracks: uiucWaveMotionTracks.map(cloneTrack),
+    },
+  },
+  {
     id: 'suggested-flat',
     name: 'Flat Hold',
     experiment: {
-      ...defaultExperiment,
+      ...blankExperiment,
       name: 'Flat Hold',
       grid: cloneGrid(neutralGrid),
     },
@@ -90,7 +170,7 @@ export const suggestedExperiments = [
     id: 'suggested-bump',
     name: 'Center Bump Hold',
     experiment: {
-      ...defaultExperiment,
+      ...blankExperiment,
       name: 'Center Bump Hold',
       grid: cloneGrid(centerBumpGrid),
     },
@@ -99,7 +179,7 @@ export const suggestedExperiments = [
     id: 'suggested-wave',
     name: 'Traveling Bump',
     experiment: {
-      ...defaultExperiment,
+      ...blankExperiment,
       name: 'Traveling Bump',
       grid: cloneGrid(neutralGrid),
       motionTracks: [

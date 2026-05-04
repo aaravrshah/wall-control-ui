@@ -17,6 +17,8 @@ export default function TimelinePlot({
   height = 240,
   maxTime = 20,
   maxDisplacement = 7,
+  readOnly = false,
+  showPointHandles = true,
 }) {
   const pad = { top: 16, right: 16, bottom: 32, left: 42 };
   const innerWidth = width - pad.left - pad.right;
@@ -35,6 +37,7 @@ export default function TimelinePlot({
   }));
 
   const handleSvgDoubleClick = (event) => {
+    if (readOnly) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const svgX = ((event.clientX - bounds.left) / bounds.width) * width;
     const svgY = ((event.clientY - bounds.top) / bounds.height) * height;
@@ -44,6 +47,7 @@ export default function TimelinePlot({
   };
 
   const startDrag = (pointId, event) => {
+    if (readOnly) return;
     event.preventDefault();
     const svg = event.currentTarget.ownerSVGElement;
     const bounds = svg.getBoundingClientRect();
@@ -93,12 +97,12 @@ export default function TimelinePlot({
             key={`${point.id}-${next.id}`}
             d={buildSegmentPath(point, next, mode)}
             className={`timeline-line ${mode}`}
-            onClick={() => onToggleSegment?.(point.id)}
+            onClick={() => !readOnly && onToggleSegment?.(point.id)}
           />
         );
       })}
 
-      {plotted.map((point) => (
+      {showPointHandles ? plotted.map((point) => (
         <g key={point.id}>
           <circle
             cx={point.x}
@@ -106,10 +110,10 @@ export default function TimelinePlot({
             r={selectedId === point.id ? 7 : 5}
             className={`timeline-point ${selectedId === point.id ? 'active' : ''}`}
             onPointerDown={(event) => startDrag(point.id, event)}
-            onClick={() => onSelect(point.id)}
+            onClick={() => !readOnly && onSelect(point.id)}
           />
         </g>
-      ))}
+      )) : null}
 
       <text x={12} y={18} className="timeline-label">mm</text>
       <text x={width - 22} y={height - 10} className="timeline-label">s</text>

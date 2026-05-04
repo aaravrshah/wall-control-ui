@@ -500,6 +500,35 @@ textarea {
   margin: 0;
 }
 
+.preview-meta-row {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+  color: #304e60;
+  font-size: 0.88rem;
+}
+
+.preview-meta-row span {
+  border-radius: 999px;
+  background: #eef5f8;
+  padding: 0.24rem 0.5rem;
+}
+
+.preview-state {
+  text-transform: capitalize;
+}
+
+.preview-state.running {
+  background: #dff3e9;
+  color: #176245;
+}
+
+.preview-state.paused {
+  background: #fff1cf;
+  color: #795716;
+}
+
 .run-console {
   display: grid;
   gap: 0.9rem;
@@ -587,6 +616,32 @@ textarea {
   flex-wrap: wrap;
 }
 
+.selection-tools {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.selection-tools label {
+  min-width: 120px;
+}
+
+.motion-mode-tabs {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.motion-mode-tabs button {
+  flex: 1 1 160px;
+}
+
+.wave-checkbox {
+  align-self: end;
+  min-height: 44px;
+}
+
 .saved-drawer {
   padding: 0.75rem 1rem;
 }
@@ -668,6 +723,19 @@ textarea {
   color: #6e5312;
   border-radius: 16px;
   padding: 0.85rem 1rem;
+}
+
+.warning-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.compact-button {
+  padding: 0.48rem 0.72rem;
+  border-radius: 10px;
+  white-space: nowrap;
 }
 
 .sticky-runbar {
@@ -1033,6 +1101,8 @@ textarea {
   .runbar-main,
   .editor-toolbar,
   .suggested-card,
+  .warning-with-action,
+  .selection-tools,
   .calibration-options,
   .motion-create-row {
     flex-direction: column;

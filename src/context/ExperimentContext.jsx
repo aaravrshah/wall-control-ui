@@ -28,6 +28,24 @@ function getDefaults() {
   };
 }
 
+function mergeSeedSavedExperiments(storedSavedExperiments = []) {
+  const storedById = new Set(storedSavedExperiments.map((experiment) => experiment.id));
+  return [
+    ...seedSavedExperiments
+      .filter((experiment) => !storedById.has(experiment.id))
+      .map(cloneExperiment),
+    ...storedSavedExperiments.map(cloneExperiment),
+  ].slice(0, 16);
+}
+
+function isLegacyBlankExperiment(experiment) {
+  return (
+    experiment?.name === 'Baseline Flat' &&
+    (experiment.motionTracks ?? []).length === 0 &&
+    (experiment.grid ?? []).flat().every((value) => Number(value) === 0)
+  );
+}
+
 function getInitialState() {
   const defaults = getDefaults();
   const stored = loadState();
@@ -39,8 +57,14 @@ function getInitialState() {
   return {
     ...defaults,
     ...stored,
-    currentExperiment: cloneExperiment(stored.currentExperiment ?? defaults.currentExperiment),
-    savedExperiments: (stored.savedExperiments ?? defaults.savedExperiments).map(cloneExperiment),
+    currentExperiment: cloneExperiment(
+      isLegacyBlankExperiment(stored.currentExperiment)
+        ? defaults.currentExperiment
+        : stored.currentExperiment ?? defaults.currentExperiment,
+    ),
+    savedExperiments: stored.savedExperiments
+      ? mergeSeedSavedExperiments(stored.savedExperiments)
+      : defaults.savedExperiments,
     calibration: cloneCalibration(stored.calibration ?? defaults.calibration),
     history: {
       past: (stored.history?.past ?? []).map(cloneExperiment),

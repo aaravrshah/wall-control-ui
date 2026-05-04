@@ -3,7 +3,14 @@ import SectionHeader from '../components/SectionHeader';
 import TimelinePlot from '../components/TimelinePlot';
 import WallGrid from '../components/WallGrid';
 import { useExperiment } from '../context/ExperimentContext';
-import { cloneGrid, createEmptyGrid, smoothGrid } from '../utils/grid';
+import { GRID_COLS, GRID_ROWS, cloneGrid, createEmptyGrid, smoothGrid } from '../utils/grid';
+import {
+  buildTrackPreviewPoints,
+  createWaveTrack,
+  getTrackDuration,
+  getTrackMode,
+  normalizeWaveSettings,
+} from '../utils/patterns';
 
 function buildRectSelection(start, end) {
   const startRow = Math.min(start.row, end.row);
@@ -52,6 +59,7 @@ function createDefaultHoldTrack(selectionKeys, displacement) {
   return {
     id: `track-${Date.now()}`,
     name: 'Hold',
+    mode: 'points',
     targetCellKeys: [...selectionKeys],
     points: [
       { id: `pt-${Date.now()}-1`, timeSec: 0, displacement, interpolationToNext: 'linear' },
@@ -118,6 +126,8 @@ export default function ExperimentSetup() {
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [sliderValue, setSliderValue] = useState(null);
   const [saveName, setSaveName] = useState('');
+  const [rowSelection, setRowSelection] = useState(0);
+  const [columnSelection, setColumnSelection] = useState(0);
   const dragSnapshotRef = useRef(null);
 
   const grid = useMemo(() => cloneGrid(currentExperiment.grid), [currentExperiment.grid]);
@@ -128,6 +138,13 @@ export default function ExperimentSetup() {
     [currentExperiment.motionTracks, selectedCells, selectedDisplacement],
   );
   const activeTrack = selectionTrackState.track;
+  const activeTrackMode = getTrackMode(activeTrack);
+  const activeWave = normalizeWaveSettings(activeTrack?.wave, currentExperiment.maxDisplacementMm);
+  const selectedPreviewCellKey = [...selectedCells][0] ?? activeTrack?.targetCellKeys?.[0] ?? null;
+  const trackPreviewPoints = activeTrack
+    ? buildTrackPreviewPoints(activeTrack, currentExperiment.maxDisplacementMm, 72, selectedPreviewCellKey)
+    : [];
+  const trackPreviewDuration = Math.max(4, activeTrack ? getTrackDuration(activeTrack) : 12);
   const selectedPoint = activeTrack?.points.find((point) => point.id === selectedPointId) ?? null;
 
   useEffect(() => {
@@ -185,7 +202,7 @@ export default function ExperimentSetup() {
     }
   };
 
-  const replaceTrackForSelection = (replacementTrack) => {
+  const buildTracksWithReplacement = (replacementTrack) => {
     const selectionSet = new Set(replacementTrack.targetCellKeys);
     const trimmed = currentExperiment.motionTracks
       .map((track) => ({
@@ -194,7 +211,94 @@ export default function ExperimentSetup() {
       }))
       .filter((track) => track.targetCellKeys.length > 0);
 
-    updateExperiment({ motionTracks: [...trimmed, replacementTrack] });
+    return [...trimmed, replacementTrack];
+  };
+
+  const replaceTrackForSelection = (replacementTrack, extraPatch = {}) => {
+    updateExperiment({
+      ...extraPatch,
+      motionTracks: buildTracksWithReplacement(replacementTrack),
+    });
+  };
+
+  const getActiveTargetCellKeys = () => (
+    selectionTrackState.mode === 'single' ? [...(activeTrack?.targetCellKeys ?? [])] : [...selectedCells]
+  );
+
+  const updateActiveTrack = (patch, extraPatch = {}) => {
+    if (!activeTrack) return;
+    replaceTrackForSelection({
+      ...activeTrack,
+      ...patch,
+      targetCellKeys: getActiveTargetCellKeys(),
+    }, extraPatch);
+  };
+
+  const switchMotionMode = (mode) => {
+    if (!activeTrack || selectionTrackState.mode === 'none') return;
+    const targetCellKeys = getActiveTargetCellKeys();
+    const targetCells = new Set(targetCellKeys);
+    if (mode === 'wave') {
+      const waveTrack = activeTrack.mode === 'wave'
+        ? activeTrack
+        : {
+          ...createWaveTrack(targetCells, selectedDisplacement, currentExperiment.maxDisplacementMm),
+          id: activeTrack.id,
+          name: activeTrack.name === 'Hold' ? 'Wave' : activeTrack.name,
+          points: activeTrack.points,
+        };
+      replaceTrackForSelection(
+        { ...waveTrack, mode: 'wave', targetCellKeys },
+        { grid: updateSelectedCells(grid, targetCells, normalizeWaveSettings(waveTrack.wave, currentExperiment.maxDisplacementMm).amplitudeMm, currentExperiment.maxDisplacementMm) },
+      );
+      return;
+    }
+
+    const fallback = createDefaultHoldTrack(selectedCells, selectedDisplacement);
+    replaceTrackForSelection({
+      ...activeTrack,
+      mode: 'points',
+      name: activeTrack.name === 'Wave' ? 'Points' : activeTrack.name,
+      targetCellKeys,
+      points: activeTrack.points?.length ? activeTrack.points : fallback.points,
+    });
+  };
+
+  const updateWaveSettings = (patch) => {
+    if (!activeTrack) return;
+    const nextWave = normalizeWaveSettings({ ...activeWave, ...patch }, currentExperiment.maxDisplacementMm);
+    const targetCells = new Set(getActiveTargetCellKeys());
+    updateActiveTrack(
+      {
+        mode: 'wave',
+        wave: nextWave,
+        name: activeTrack.name === 'Hold' ? 'Wave' : activeTrack.name,
+      },
+      { grid: updateSelectedCells(grid, targetCells, nextWave.amplitudeMm, currentExperiment.maxDisplacementMm) },
+    );
+  };
+
+  const selectRow = (rowIndex) => {
+    setSelectedCells(new Set(Array.from({ length: GRID_COLS }, (_, colIndex) => `${rowIndex}-${colIndex}`)));
+  };
+
+  const selectColumn = (colIndex) => {
+    setSelectedCells(new Set(Array.from({ length: GRID_ROWS }, (_, rowIndex) => `${rowIndex}-${colIndex}`)));
+  };
+
+  const selectActivePattern = () => {
+    const keys = new Set();
+    grid.forEach((row, rowIndex) => {
+      row.forEach((value, colIndex) => {
+        if (Number(value) > 0.01) {
+          keys.add(`${rowIndex}-${colIndex}`);
+        }
+      });
+    });
+    currentExperiment.motionTracks.forEach((track) => {
+      track.targetCellKeys.forEach((key) => keys.add(key));
+    });
+    setSelectedCells(keys);
   };
 
   return (
@@ -236,6 +340,28 @@ export default function ExperimentSetup() {
           <div className="heat-legend">
             <span>0 mm</span>
             <span>{currentExperiment.maxDisplacementMm.toFixed(1)} mm</span>
+          </div>
+
+          <div className="selection-tools top-gap">
+            <label>
+              Row
+              <select value={rowSelection} onChange={(event) => setRowSelection(Number(event.target.value))}>
+                {Array.from({ length: GRID_ROWS }, (_, rowIndex) => (
+                  <option key={rowIndex} value={rowIndex}>Row {rowIndex + 1}</option>
+                ))}
+              </select>
+            </label>
+            <button className="secondary" onClick={() => selectRow(rowSelection)}>Select Row</button>
+            <label>
+              Column
+              <select value={columnSelection} onChange={(event) => setColumnSelection(Number(event.target.value))}>
+                {Array.from({ length: GRID_COLS }, (_, colIndex) => (
+                  <option key={colIndex} value={colIndex}>Column {colIndex + 1}</option>
+                ))}
+              </select>
+            </label>
+            <button className="secondary" onClick={() => selectColumn(columnSelection)}>Select Column</button>
+            <button className="secondary" onClick={selectActivePattern}>Select Active Pattern</button>
           </div>
 
           <div className="top-gap control-grid">
@@ -306,8 +432,8 @@ export default function ExperimentSetup() {
         <aside className="page-stack">
           <section className="panel control-grid timeline-panel">
             <SectionHeader
-              title="Selection Timeline"
-              subtitle="A default hold timeline is always shown for the current selection."
+              title="Selection Motion"
+              subtitle="Define selected actuators with hand-placed points or a generated wave track."
             />
 
             {selectionTrackState.mode === 'none' ? (
@@ -318,7 +444,7 @@ export default function ExperimentSetup() {
               <>
                 {selectionTrackState.mode === 'linked' ? (
                   <div className="callout subtle">
-                    This actuator is part of a shared timeline. Edits here update the full target group for that track.
+                    This selection currently inherits a larger track. Any edit here creates settings for only the selected actuators.
                   </div>
                 ) : null}
 
@@ -328,145 +454,290 @@ export default function ExperimentSetup() {
                     <input
                       value={activeTrack.name}
                       onChange={(event) => {
-                        if (selectionTrackState.mode !== 'single') return;
-                        updateExperiment({
-                          motionTracks: currentExperiment.motionTracks.map((track) =>
-                            track.id === activeTrack.id ? { ...track, name: event.target.value } : track,
-                          ),
-                        });
+                        updateActiveTrack({ name: event.target.value });
                       }}
-                      readOnly={selectionTrackState.mode !== 'single'}
                     />
                   </label>
                   <label>
                     Target Cells
-                    <input value={activeTrack.targetCellKeys.join(', ')} readOnly />
+                    <input value={getActiveTargetCellKeys().join(', ')} readOnly />
                   </label>
                 </div>
 
-                <TimelinePlot
-                  points={sortPoints(activeTrack.points)}
-                  selectedId={selectedPointId}
-                  onSelect={setSelectedPointId}
-                  onPointDrag={(pointId, timeSec, displacement) => {
-                    const updatedTrack = {
-                      ...activeTrack,
-                      points: activeTrack.points.map((point) =>
-                        point.id === pointId
-                          ? { ...point, timeSec, displacement: clampToMax(displacement, currentExperiment.maxDisplacementMm) }
-                          : point,
-                      ),
-                    };
-                    replaceTrackForSelection(updatedTrack);
-                  }}
-                  onAddPoint={(timeSec, displacement) => {
-                    const updatedTrack = {
-                      ...activeTrack,
-                      points: [
-                        ...activeTrack.points,
-                        {
-                          id: `pt-${Date.now()}`,
-                          timeSec,
-                          displacement: clampToMax(displacement, currentExperiment.maxDisplacementMm),
-                          interpolationToNext: 'linear',
-                        },
-                      ],
-                    };
-                    replaceTrackForSelection(updatedTrack);
-                  }}
-                  onToggleSegment={(pointId) => {
-                    const updatedTrack = {
-                      ...activeTrack,
-                      points: activeTrack.points.map((point) =>
-                        point.id === pointId
-                          ? { ...point, interpolationToNext: point.interpolationToNext === 'sine' ? 'linear' : 'sine' }
-                          : point,
-                      ),
-                    };
-                    replaceTrackForSelection(updatedTrack);
-                  }}
-                  maxTime={12}
-                  maxDisplacement={currentExperiment.maxDisplacementMm}
-                />
-
-                {selectedPoint ? (
-                  <div className="two-input-grid">
-                    <label>
-                      Point Time (s)
-                      <input
-                        type="number"
-                        min={0}
-                        max={60}
-                        step={0.1}
-                        value={selectedPoint.timeSec}
-                        onChange={(event) => {
-                          const updatedTrack = {
-                            ...activeTrack,
-                            points: activeTrack.points.map((point) =>
-                              point.id === selectedPoint.id ? { ...point, timeSec: Number(event.target.value) } : point,
-                            ),
-                          };
-                          replaceTrackForSelection(updatedTrack);
-                        }}
-                      />
-                    </label>
-                    <label>
-                      Point Displacement (mm)
-                      <input
-                        type="number"
-                        min={0}
-                        max={currentExperiment.maxDisplacementMm}
-                        step={0.1}
-                        value={selectedPoint.displacement}
-                        onChange={(event) => {
-                          const updatedTrack = {
-                            ...activeTrack,
-                            points: activeTrack.points.map((point) =>
-                              point.id === selectedPoint.id
-                                ? { ...point, displacement: clampToMax(event.target.value, currentExperiment.maxDisplacementMm) }
-                                : point,
-                            ),
-                          };
-                          replaceTrackForSelection(updatedTrack);
-                        }}
-                      />
-                    </label>
-                  </div>
-                ) : null}
-
-                <div className="saved-actions">
+                <div className="motion-mode-tabs" role="group" aria-label="Motion mode">
                   <button
-                    className="secondary"
-                    onClick={() => {
-                      const updatedTrack = {
-                        ...activeTrack,
-                        points: [
-                          ...activeTrack.points,
-                          {
-                            id: `pt-${Date.now()}`,
-                            timeSec: (sortPoints(activeTrack.points).at(-1)?.timeSec ?? 0) + 1,
-                            displacement: selectedDisplacement,
-                            interpolationToNext: 'linear',
-                          },
-                        ],
-                      };
-                      replaceTrackForSelection(updatedTrack);
-                    }}
+                    className={activeTrackMode === 'points' ? '' : 'secondary'}
+                    onClick={() => switchMotionMode('points')}
                   >
-                    Add Point
+                    Points
                   </button>
                   <button
-                    className="danger"
-                    onClick={() =>
-                      updateExperiment({
-                        motionTracks: currentExperiment.motionTracks.filter((track) => track.id !== activeTrack.id),
-                      })
-                    }
-                    disabled={selectionTrackState.mode !== 'single'}
+                    className={activeTrackMode === 'wave' ? '' : 'secondary'}
+                    onClick={() => switchMotionMode('wave')}
                   >
-                    Delete Track
+                    Frequency Wave
                   </button>
                 </div>
+
+                {activeTrackMode === 'points' ? (
+                  <>
+                    <TimelinePlot
+                      points={sortPoints(activeTrack.points)}
+                      selectedId={selectedPointId}
+                      onSelect={setSelectedPointId}
+                      onPointDrag={(pointId, timeSec, displacement) => {
+                        const updatedTrack = {
+                          ...activeTrack,
+                          mode: 'points',
+                          points: activeTrack.points.map((point) =>
+                            point.id === pointId
+                              ? { ...point, timeSec, displacement: clampToMax(displacement, currentExperiment.maxDisplacementMm) }
+                              : point,
+                          ),
+                        };
+                        updateActiveTrack({
+                          mode: 'points',
+                          points: updatedTrack.points,
+                        });
+                      }}
+                      onAddPoint={(timeSec, displacement) => {
+                        const updatedTrack = {
+                          ...activeTrack,
+                          mode: 'points',
+                          points: [
+                            ...activeTrack.points,
+                            {
+                              id: `pt-${Date.now()}`,
+                              timeSec,
+                              displacement: clampToMax(displacement, currentExperiment.maxDisplacementMm),
+                              interpolationToNext: 'linear',
+                            },
+                          ],
+                        };
+                        updateActiveTrack({
+                          mode: 'points',
+                          points: updatedTrack.points,
+                        });
+                      }}
+                      onToggleSegment={(pointId) => {
+                        const updatedTrack = {
+                          ...activeTrack,
+                          mode: 'points',
+                          points: activeTrack.points.map((point) =>
+                            point.id === pointId
+                              ? { ...point, interpolationToNext: point.interpolationToNext === 'sine' ? 'linear' : 'sine' }
+                              : point,
+                          ),
+                        };
+                        updateActiveTrack({
+                          mode: 'points',
+                          points: updatedTrack.points,
+                        });
+                      }}
+                      maxTime={12}
+                      maxDisplacement={currentExperiment.maxDisplacementMm}
+                    />
+
+                    {selectedPoint ? (
+                      <div className="two-input-grid">
+                        <label>
+                          Point Time (s)
+                          <input
+                            type="number"
+                            min={0}
+                            max={60}
+                            step={0.1}
+                            value={selectedPoint.timeSec}
+                            onChange={(event) => {
+                              const updatedTrack = {
+                                ...activeTrack,
+                                mode: 'points',
+                                points: activeTrack.points.map((point) =>
+                                  point.id === selectedPoint.id ? { ...point, timeSec: Number(event.target.value) } : point,
+                                ),
+                              };
+                              updateActiveTrack({
+                                mode: 'points',
+                                points: updatedTrack.points,
+                              });
+                            }}
+                          />
+                        </label>
+                        <label>
+                          Point Displacement (mm)
+                          <input
+                            type="number"
+                            min={0}
+                            max={currentExperiment.maxDisplacementMm}
+                            step={0.1}
+                            value={selectedPoint.displacement}
+                            onChange={(event) => {
+                              const updatedTrack = {
+                                ...activeTrack,
+                                mode: 'points',
+                                points: activeTrack.points.map((point) =>
+                                  point.id === selectedPoint.id
+                                    ? { ...point, displacement: clampToMax(event.target.value, currentExperiment.maxDisplacementMm) }
+                                    : point,
+                                ),
+                              };
+                              updateActiveTrack({
+                                mode: 'points',
+                                points: updatedTrack.points,
+                              });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+
+                    <div className="saved-actions">
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          const updatedTrack = {
+                            ...activeTrack,
+                            mode: 'points',
+                            points: [
+                              ...activeTrack.points,
+                              {
+                                id: `pt-${Date.now()}`,
+                                timeSec: (sortPoints(activeTrack.points).at(-1)?.timeSec ?? 0) + 1,
+                                displacement: selectedDisplacement,
+                                interpolationToNext: 'linear',
+                              },
+                            ],
+                          };
+                          updateActiveTrack({
+                            mode: 'points',
+                            points: updatedTrack.points,
+                          });
+                        }}
+                      >
+                        Add Point
+                      </button>
+                      <button
+                        className="danger"
+                        onClick={() =>
+                          updateExperiment({
+                            motionTracks: currentExperiment.motionTracks.filter((track) => track.id !== activeTrack.id),
+                          })
+                        }
+                        disabled={selectionTrackState.mode !== 'single'}
+                      >
+                        Delete Track
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="two-input-grid">
+                      <label>
+                        Frequency (Hz)
+                        <input
+                          type="number"
+                          min={0.01}
+                          max={10}
+                          step={0.01}
+                          value={activeWave.frequencyHz}
+                          onChange={(event) => updateWaveSettings({ frequencyHz: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Amplitude (mm)
+                        <input
+                          type="number"
+                          min={0}
+                          max={currentExperiment.maxDisplacementMm}
+                          step={0.1}
+                          value={activeWave.amplitudeMm}
+                          onChange={(event) => updateWaveSettings({ amplitudeMm: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                    <div className="two-input-grid">
+                      <label>
+                        Baseline (mm)
+                        <input
+                          type="number"
+                          min={0}
+                          max={currentExperiment.maxDisplacementMm}
+                          step={0.1}
+                          value={activeWave.baselineMm}
+                          onChange={(event) => updateWaveSettings({ baselineMm: event.target.value })}
+                        />
+                      </label>
+                      <label className="checkbox-row wave-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={activeWave.cycles === 0}
+                          onChange={(event) => updateWaveSettings({ cycles: event.target.checked ? 0 : 4 })}
+                        />
+                        Infinite Cycles
+                      </label>
+                    </div>
+                    {activeWave.cycles > 0 ? (
+                      <label>
+                        Cycles
+                        <input
+                          type="number"
+                          min={1}
+                          max={1000}
+                          step={1}
+                          value={activeWave.cycles}
+                          onChange={(event) => updateWaveSettings({ cycles: event.target.value })}
+                        />
+                      </label>
+                    ) : null}
+                    <div className="two-input-grid">
+                      <label>
+                        Phase (deg)
+                        <input
+                          type="number"
+                          min={-360}
+                          max={360}
+                          step={1}
+                          value={activeWave.phaseDegrees}
+                          onChange={(event) => updateWaveSettings({ phaseDegrees: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Phase Lag (deg)
+                        <input
+                          type="number"
+                          min={-360}
+                          max={360}
+                          step={1}
+                          value={activeWave.phaseLagDegrees}
+                          onChange={(event) => updateWaveSettings({ phaseLagDegrees: event.target.value })}
+                        />
+                      </label>
+                    </div>
+
+                    <TimelinePlot
+                      points={trackPreviewPoints}
+                      selectedId={null}
+                      readOnly
+                      showPointHandles={false}
+                      maxTime={trackPreviewDuration}
+                      maxDisplacement={currentExperiment.maxDisplacementMm}
+                    />
+
+                    <div className="saved-actions">
+                      <button
+                        className="danger"
+                        onClick={() =>
+                          updateExperiment({
+                            motionTracks: currentExperiment.motionTracks.filter((track) => track.id !== activeTrack.id),
+                          })
+                        }
+                        disabled={selectionTrackState.mode !== 'single'}
+                      >
+                        Delete Track
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             ) : null}
           </section>
