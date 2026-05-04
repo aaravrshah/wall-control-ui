@@ -12,6 +12,12 @@ const CENTER_OFFSET_DEGREES = [
   15, 10, 5, 3, 5, -10, 7, -2, 5, 10, 3, 20, 5, 5, 15, 20,
 ];
 
+const TEMPLATE_AMPLITUDE_DEGREES = 20;
+const TEMPLATE_TRAVEL_MM = 5;
+const DEFAULT_WAVE_FREQ_HZ = 1;
+const DEFAULT_PHASE_INCREMENT_RADIANS = Math.PI / 4;
+const DEGREES_PER_MM = TEMPLATE_AMPLITUDE_DEGREES / TEMPLATE_TRAVEL_MM;
+
 function formatNumber(value, digits = 3) {
   return Number(value).toFixed(digits).replace(/\.?0+$/, '');
 }
@@ -112,6 +118,109 @@ function parseBaseGrid(sketch) {
   return rows;
 }
 
+function parseMatrix(sketch, declarationPattern, label) {
+  const body = extractInitializer(sketch, declarationPattern, label);
+  const rows = [...body.matchAll(/\{([^{}]+)\}/g)].map((match) => parseNumbers(match[1]));
+
+  if (rows.length !== GRID_ROWS || rows.some((row) => row.length !== GRID_COLS)) {
+    throw new Error(`Expected a ${GRID_ROWS} x ${GRID_COLS} ${label}.`);
+  }
+
+  return rows;
+}
+
+function radiansToDegrees(radians) {
+  const degrees = numberOrDefault(radians, 0) * 180 / Math.PI;
+  return ((degrees % 360) + 360) % 360;
+}
+
+function parsePerActuatorSineSketch(source) {
+  const templateAmplitudeDegrees = readOptionalNumber(
+    source,
+    /const\s+float\s+WAVE_AMPLITUDE_DEGREES\s*=\s*(-?\d+(?:\.\d+)?)/,
+    TEMPLATE_AMPLITUDE_DEGREES,
+  );
+  const templateTravelMm = readOptionalNumber(
+    source,
+    /const\s+float\s+TEMPLATE_TRAVEL_MM\s*=\s*(-?\d+(?:\.\d+)?)/,
+    TEMPLATE_TRAVEL_MM,
+  );
+  const degreesPerMm = templateTravelMm > 0 ? templateAmplitudeDegrees / templateTravelMm : DEGREES_PER_MM;
+  const amplitudeDegrees = parseMatrix(
+    source,
+    /const\s+float\s+AMPLITUDE_DEGREES_BY_CELL\s*\[[^\]]+\]\s*\[[^\]]+\]\s*=/,
+    'amplitude table',
+  );
+  const frequencyHz = parseMatrix(
+    source,
+    /const\s+float\s+FREQUENCY_HZ_BY_CELL\s*\[[^\]]+\]\s*\[[^\]]+\]\s*=/,
+    'frequency table',
+  );
+  const phaseRadians = parseMatrix(
+    source,
+    /const\s+float\s+PHASE_RADIANS_BY_CELL\s*\[[^\]]+\]\s*\[[^\]]+\]\s*=/,
+    'phase table',
+  );
+  const grid = amplitudeDegrees.map((row) =>
+    row.map((value) => Number((Math.max(0, value) / degreesPerMm).toFixed(2))),
+  );
+  const maxGridDisplacement = Math.max(0, ...grid.flat());
+  const maxDisplacementMm = Math.max(
+    maxGridDisplacement,
+    readOptionalNumber(
+      source,
+      /const\s+float\s+MAX_DISPLACEMENT_MM\s*=\s*(-?\d+(?:\.\d+)?)/,
+      Math.max(7, maxGridDisplacement),
+    ),
+  );
+  const groups = new Map();
+
+  for (let row = 0; row < GRID_ROWS; row += 1) {
+    for (let col = 0; col < GRID_COLS; col += 1) {
+      const amplitudeMm = grid[row][col];
+      if (amplitudeMm <= 0.01) continue;
+      const frequency = numberOrDefault(frequencyHz[row][col], DEFAULT_WAVE_FREQ_HZ);
+      const phaseDegrees = radiansToDegrees(phaseRadians[row][col]);
+      const key = [
+        amplitudeMm.toFixed(2),
+        frequency.toFixed(3),
+        phaseDegrees.toFixed(3),
+      ].join('|');
+      const group = groups.get(key) ?? {
+        amplitudeMm,
+        frequencyHz: frequency,
+        phaseLagDegrees: phaseDegrees,
+        targetCellKeys: [],
+      };
+      group.targetCellKeys.push(`${row}-${col}`);
+      groups.set(key, group);
+    }
+  }
+
+  return {
+    id: 'current-experiment',
+    name: metadataValue(source, 'WALL_CONTROL_UI_EXPERIMENT_NAME') || 'Imported Arduino Sketch',
+    grid,
+    motionTracks: [...groups.values()].map((group, index) => ({
+      id: `imported-sine-${index}`,
+      name: `Imported Sine ${index + 1}`,
+      mode: 'wave',
+      targetCellKeys: group.targetCellKeys,
+      points: [],
+      wave: normalizeWaveSettings({
+        baselineMm: 0,
+        amplitudeMm: group.amplitudeMm,
+        frequencyHz: group.frequencyHz,
+        phaseLagDegrees: group.phaseLagDegrees,
+        cycles: 0,
+      }, maxDisplacementMm),
+    })),
+    notes: 'Imported from per-actuator sine Arduino sketch.',
+    maxDisplacementMm,
+    servoMaxDegrees: templateAmplitudeDegrees,
+  };
+}
+
 function parseTrackTargets(sketch, index) {
   const body = extractFunctionBody(sketch, `isTrack${index}Target`);
   if (!body) {
@@ -172,6 +281,10 @@ function parsePointTrack(sketch, index, targets, baseTrackName, maxDisplacementM
 
 export function parseArduinoSketch(sketch) {
   const source = String(sketch ?? '');
+  if (/AMPLITUDE_DEGREES_BY_CELL/.test(source)) {
+    return parsePerActuatorSineSketch(source);
+  }
+
   const maxDisplacementMm = Math.max(0.1, readRequiredNumber(
     source,
     /const\s+float\s+MAX_DISPLACEMENT_MM\s*=\s*(-?\d+(?:\.\d+)?)/,
@@ -227,6 +340,83 @@ function formatGridRows(grid) {
     const values = Array.from({ length: GRID_COLS }, (_, col) => formatNumber(numberOrDefault(grid[row]?.[col], 0), 3));
     return `  {${values.join(', ')}}`;
   }).join(',\n');
+}
+
+function formatMatrixRows(grid, digits = 3) {
+  return Array.from({ length: GRID_ROWS }, (_, row) => {
+    const values = Array.from({ length: GRID_COLS }, (_, col) => formatNumber(numberOrDefault(grid[row]?.[col], 0), digits));
+    return `  {${values.join(', ')}}`;
+  }).join(',\n');
+}
+
+function createNumberGrid(fillValue = 0) {
+  return Array.from({ length: GRID_ROWS }, () => Array.from({ length: GRID_COLS }, () => fillValue));
+}
+
+function getKeyPosition(key) {
+  const [row, col] = String(key).split('-').map(Number);
+  return Number.isInteger(row) && Number.isInteger(col) && row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS
+    ? { row, col }
+    : null;
+}
+
+function pointTrackFrequencyHz(track) {
+  const durationSec = Math.max(0, ...(track.points ?? []).map((point) => numberOrDefault(point.timeSec, 0)));
+  return durationSec > 0 ? 1 / durationSec : DEFAULT_WAVE_FREQ_HZ;
+}
+
+function pointTrackAmplitudeMm(track, maxDisplacementMm) {
+  return clamp(
+    Math.max(0, ...(track.points ?? []).map((point) => numberOrDefault(point.displacement, 0))),
+    0,
+    maxDisplacementMm,
+  );
+}
+
+function buildPerActuatorWaveTables(experiment, maxDisplacementMm) {
+  const amplitudeMm = createNumberGrid(0);
+  const frequencyHz = createNumberGrid(0);
+  const phaseRadians = createNumberGrid(0);
+
+  (experiment.grid ?? []).forEach((row, rowIndex) => {
+    row.forEach((value, colIndex) => {
+      const displacementMm = clamp(numberOrDefault(value, 0), 0, maxDisplacementMm);
+      amplitudeMm[rowIndex][colIndex] = displacementMm;
+      frequencyHz[rowIndex][colIndex] = displacementMm > 0 ? DEFAULT_WAVE_FREQ_HZ : 0;
+      phaseRadians[rowIndex][colIndex] = colIndex * DEFAULT_PHASE_INCREMENT_RADIANS;
+    });
+  });
+
+  (experiment.motionTracks ?? []).forEach((track) => {
+    if (getTrackMode(track) === 'wave') {
+      const wave = normalizeWaveSettings(track.wave, maxDisplacementMm);
+      (track.targetCellKeys ?? []).forEach((key) => {
+        const position = getKeyPosition(key);
+        if (!position) return;
+        amplitudeMm[position.row][position.col] = wave.amplitudeMm;
+        frequencyHz[position.row][position.col] = wave.frequencyHz;
+        phaseRadians[position.row][position.col] = wave.phaseLagDegrees * Math.PI / 180;
+      });
+      return;
+    }
+
+    const amplitude = pointTrackAmplitudeMm(track, maxDisplacementMm);
+    const frequency = pointTrackFrequencyHz(track);
+    (track.targetCellKeys ?? []).forEach((key) => {
+      const position = getKeyPosition(key);
+      if (!position) return;
+      amplitudeMm[position.row][position.col] = amplitude;
+      frequencyHz[position.row][position.col] = frequency;
+      phaseRadians[position.row][position.col] = 0;
+    });
+  });
+
+  return {
+    amplitudeMm,
+    amplitudeDegrees: amplitudeMm.map((row) => row.map((value) => value * DEGREES_PER_MM)),
+    frequencyHz,
+    phaseRadians,
+  };
 }
 
 function formatCellPredicate(track, functionName) {
@@ -348,19 +538,20 @@ export function sampleGeneratedSketchGrid(experiment, timeSec) {
 
 export function generateArduinoSketch(experiment) {
   const maxDisplacementMm = Math.max(0.1, numberOrDefault(experiment.maxDisplacementMm, 7));
-  const servoMaxDegrees = clamp(numberOrDefault(experiment.servoMaxDegrees, 20), 1, 45);
   const tracks = experiment.motionTracks ?? [];
+  const waveTables = buildPerActuatorWaveTables(experiment, maxDisplacementMm);
 
   return `#include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
 ${formatSketchMetadata(experiment, tracks)}
 
+// --- Hardware Setup ---
 Adafruit_PWMServoDriver pwmBoards[] = {
-  Adafruit_PWMServoDriver(0x40),  // Physical row 2
-  Adafruit_PWMServoDriver(0x41),  // Physical row 1
-  Adafruit_PWMServoDriver(0x42),  // Physical row 4
-  Adafruit_PWMServoDriver(0x43),  // Physical row 3
+  Adafruit_PWMServoDriver(0x40),  // Row 2
+  Adafruit_PWMServoDriver(0x41),  // Row 1
+  Adafruit_PWMServoDriver(0x42),  // Row 4
+  Adafruit_PWMServoDriver(0x43),  // Row 3
 };
 
 const int BOARD_COUNT = 4;
@@ -373,40 +564,36 @@ const int GRID_COLS = 16;
 #define SERVOMAX   512
 #define SERVO_FREQ 50
 
+// --- Wave Parameters ---
 const float MAX_DISPLACEMENT_MM = ${formatNumber(maxDisplacementMm, 3)};
-const float SERVO_MAX_DEGREES = ${formatNumber(servoMaxDegrees, 3)};
-const int REFRESH_DELAY_MS = 20;
+const float WAVE_AMPLITUDE_DEGREES = ${formatNumber(TEMPLATE_AMPLITUDE_DEGREES, 3)};
+const float TEMPLATE_TRAVEL_MM = ${formatNumber(TEMPLATE_TRAVEL_MM, 3)};
+const float DEGREES_PER_MM = WAVE_AMPLITUDE_DEGREES / TEMPLATE_TRAVEL_MM;
 
-const float baseCenter = (SERVOMIN + SERVOMAX) / 2.0;
-const float ticksPerDegree = (SERVOMAX - SERVOMIN) / 180.0;
-
-// Boards 0x40/0x41 = CW positive displacement, boards 0x42/0x43 = CCW positive displacement.
+// Boards 0x40/0x41 = CW (-1), boards 0x42/0x43 = CCW (+1).
 const int DISPLACEMENT_SIGN_BY_BOARD[BOARD_COUNT] = {-1, -1, 1, 1};
 
-const int PHYSICAL_ROW_BY_BOARD[BOARD_COUNT] = {
-  1,  // 0x40 -> row 2
-  0,  // 0x41 -> row 1
-  3,  // 0x42 -> row 4
-  2,  // 0x43 -> row 3
-};
-
+// --- Static Calibration Offsets ---
 const float centerOffsetDegrees[TOTAL_SERVOS] = {
 ${formatOffsets()}
 };
 
-const float BASE_GRID_MM[GRID_ROWS][GRID_COLS] = {
-${formatGridRows(experiment.grid)}
+// Per-actuator wave tables. Amplitude is generated from mm using 20 degrees / 5 mm.
+const float AMPLITUDE_DEGREES_BY_CELL[GRID_ROWS][GRID_COLS] = {
+${formatMatrixRows(waveTables.amplitudeDegrees)}
+};
+
+const float FREQUENCY_HZ_BY_CELL[GRID_ROWS][GRID_COLS] = {
+${formatMatrixRows(waveTables.frequencyHz)}
+};
+
+const float PHASE_RADIANS_BY_CELL[GRID_ROWS][GRID_COLS] = {
+${formatMatrixRows(waveTables.phaseRadians, 6)}
 };
 
 float centers[TOTAL_SERVOS];
-
-int servoIndexToBoard(int servoIndex) {
-  return servoIndex / CHANNELS_PER_BOARD;
-}
-
-int servoIndexToChannel(int servoIndex) {
-  return servoIndex % CHANNELS_PER_BOARD;
-}
+const float baseCenter = (SERVOMIN + SERVOMAX) / 2.0;
+const float ticksPerDegree = (SERVOMAX - SERVOMIN) / 180.0;
 
 int getPhysicalColumn(int boardIdx, int channel) {
   if (boardIdx == 0 || boardIdx == 1) {
@@ -418,40 +605,15 @@ int getPhysicalColumn(int boardIdx, int channel) {
   return 1 + 2 * (15 - channel);
 }
 
-float positiveWave(float radians) {
-  return 0.5 * (sinf(radians) + 1.0);
-}
-
-float mmToServoDegrees(float displacementMm) {
-  return constrain(displacementMm, 0.0, MAX_DISPLACEMENT_MM) / MAX_DISPLACEMENT_MM * SERVO_MAX_DEGREES;
-}
-
-${formatTrackCode(tracks, maxDisplacementMm)}
-
-float getDesignedDisplacementMm(int row, int col, float timeSec) {
-  float displacementMm = BASE_GRID_MM[row][col];
-${formatTrackApplication(tracks)}
-  return constrain(displacementMm, 0.0, MAX_DISPLACEMENT_MM);
-}
-
-void driveServoDisplacement(int servoIndex, float displacementDegrees) {
-  int boardIdx = servoIndexToBoard(servoIndex);
-  float safeDisplacement = constrain(displacementDegrees, 0.0, SERVO_MAX_DEGREES);
-  float signedDegrees = safeDisplacement * DISPLACEMENT_SIGN_BY_BOARD[boardIdx];
-  float pwmValue = centers[servoIndex] + (signedDegrees * ticksPerDegree);
-
-  pwmValue = constrain(pwmValue, SERVOMIN, SERVOMAX);
-  pwmBoards[boardIdx].setPWM(servoIndexToChannel(servoIndex), 0, (int)pwmValue);
-}
-
-void initializeCenters() {
-  for (int servoIndex = 0; servoIndex < TOTAL_SERVOS; servoIndex += 1) {
-    centers[servoIndex] = baseCenter + (centerOffsetDegrees[servoIndex] * ticksPerDegree);
-    centers[servoIndex] = constrain(centers[servoIndex], SERVOMIN, SERVOMAX);
-  }
+int getPhysicalRow(int boardIdx) {
+  if (boardIdx == 0) return 1;
+  if (boardIdx == 1) return 0;
+  if (boardIdx == 2) return 3;
+  return 2;
 }
 
 void setup() {
+  Serial.begin(9600);
   Wire.begin();
 
   for (int boardIdx = 0; boardIdx < BOARD_COUNT; boardIdx += 1) {
@@ -460,24 +622,34 @@ void setup() {
     pwmBoards[boardIdx].setPWMFreq(SERVO_FREQ);
   }
 
-  initializeCenters();
+  for (int i = 0; i < TOTAL_SERVOS; i += 1) {
+    centers[i] = baseCenter + (centerOffsetDegrees[i] * ticksPerDegree);
+    centers[i] = constrain(centers[i], SERVOMIN, SERVOMAX);
+  }
+
+  Serial.println("System Ready: Wave starting...");
 }
 
 void loop() {
   static unsigned long startTime = millis();
-  float timeSec = (millis() - startTime) / 1000.0;
+  float t = (millis() - startTime) / 1000.0;
 
-  for (int servoIndex = 0; servoIndex < TOTAL_SERVOS; servoIndex += 1) {
-    int boardIdx = servoIndexToBoard(servoIndex);
-    int channel = servoIndexToChannel(servoIndex);
-    int row = PHYSICAL_ROW_BY_BOARD[boardIdx];
+  for (int i = 0; i < TOTAL_SERVOS; i += 1) {
+    int boardIdx = i / CHANNELS_PER_BOARD;
+    int channel = i % CHANNELS_PER_BOARD;
+    int row = getPhysicalRow(boardIdx);
     int col = getPhysicalColumn(boardIdx, channel);
 
-    float displacementMm = getDesignedDisplacementMm(row, col, timeSec);
-    driveServoDisplacement(servoIndex, mmToServoDegrees(displacementMm));
+    float WAVE_FREQ = FREQUENCY_HZ_BY_CELL[row][col];
+    float WAVE_AMPLITUDE_DEGREES = AMPLITUDE_DEGREES_BY_CELL[row][col];
+    float phase = PHASE_RADIANS_BY_CELL[row][col];
+
+    float angle = WAVE_AMPLITUDE_DEGREES * sin(2.0 * PI * WAVE_FREQ * t + phase);
+    float pwmVal = centers[i] + (angle * ticksPerDegree * DISPLACEMENT_SIGN_BY_BOARD[boardIdx]);
+    pwmBoards[boardIdx].setPWM(channel, 0, (int)constrain(pwmVal, SERVOMIN, SERVOMAX));
   }
 
-  delay(REFRESH_DELAY_MS);
+  delay(20);
 }
 `;
 }
