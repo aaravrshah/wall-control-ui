@@ -1,363 +1,165 @@
 # Programmable Deformable Wall Control UI
 
-React + Vite control software for designing, previewing, and exporting Arduino sketches for a **4 x 16 programmable deformable wall** used in oscillatory flume experiments.
+React + Vite software for designing, previewing, and exporting Arduino sketches for a **4 x 16 programmable deformable wall** used in oscillatory flume experiments.
 
-This repository is intended for graduate students and research staff who need to prepare repeatable actuator patterns, generate Arduino code, and operate the wall as part of laboratory experiments. The web application is a design and sketch-generation tool: the browser previews the pattern, but the uploaded Arduino sketch owns the real actuator timing once the device is running.
+Repository: `https://github.com/aaravrshah/wall-control-ui`
 
-## Quick Start
+The browser app is a pattern editor and sketch generator. It previews the wall motion on screen, then exports a self-contained `.ino` file. The physical device is controlled by the uploaded Arduino sketch, not by a live browser connection.
 
-Use these steps when you already have the repository on the lab computer.
+## Installing Required Software
+
+Most users will only need to install these once on the lab computer.
+
+1. Install **Node.js** from `https://nodejs.org/`.
+   - Choose the **LTS** version.
+   - Run the installer with the default options.
+   - Node.js includes `npm`, which is used to install and run this web app.
+2. Install **Arduino IDE** from `https://www.arduino.cc/en/software`.
+3. In Arduino IDE, install the **Adafruit PWM Servo Driver Library**.
+   - Open Arduino IDE.
+   - Go to **Tools > Manage Libraries...**.
+   - Search for `Adafruit PWM Servo Driver`.
+   - Install the library.
+
+To confirm Node.js installed correctly, open a terminal and run:
+
+```bash
+node --version
+npm --version
+```
+
+Both commands should print version numbers.
+
+## Getting the Project
+
+The project is on GitHub at:
+
+```text
+https://github.com/aaravrshah/wall-control-ui
+```
+
+If you are comfortable with Git, clone the repository. If not, open the GitHub page, click **Code**, choose **Download ZIP**, unzip the folder, and use that folder as the project folder.
+
+## Running the App
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal, usually:
+Run these commands from inside the project folder. `npm install` only needs to be run the first time, or after the dependency files change. `npm run dev` starts the local web app.
+
+Open the local Vite URL printed in the terminal, usually:
 
 ```text
 http://localhost:5173
 ```
 
-The main workflow is:
-
-1. Open the app.
-2. Choose **New / Template** or continue editing the current experiment.
-3. Use **Edit Grid** to select actuators and define their displacement or motion.
-4. Return to the sketch generator.
-5. Press **Preview** to verify the browser simulation.
-6. Press **Download .ino** or **Copy Arduino Code**.
-7. Upload the sketch manually through Arduino IDE.
-8. Run the experiment using the uploaded Arduino code and the lab hardware safety procedure.
-
-## Important Safety Notes
-
-This UI does **not** provide a hardware emergency stop, current-limit enforcement, live telemetry, or real-time fault handling. Treat the physical power cutoff, bench supply controls, fuses, and lab safety procedure as the source of truth during experiments.
-
-Before applying power or starting a run:
-
-- Confirm the wall is mechanically clear and no tools, hands, cables, or loose objects are in the actuator path.
-- Confirm the Arduino, PCA9685 boards, servo power supply, and common ground are wired correctly.
-- Start with a low-amplitude or known-safe pattern after any wiring, calibration, code, or mechanical change.
-- Verify that the browser preview matches the expected spatial pattern before uploading the sketch.
-- Do not rely on the browser **Reset**, **Pause**, or **Preview** buttons to stop physical motion. Those controls affect the browser preview only.
-- If motion looks incorrect, noisy, reversed, or excessive, stop the hardware from the physical supply or lab cutoff first, then debug.
-
-## What This Software Does
-
-The app helps operators create a wall pattern at the actuator level and export it as a self-contained Arduino sketch.
-
-Current capabilities:
-
-- 4 row x 16 column wall editor for all 64 actuators.
-- Template experiments such as **UIUC Wave**, **Flat Hold**, **Center Bump Hold**, and **Traveling Bump**.
-- Selection tools for individual cells, rectangular regions, full rows, full columns, and all active actuators.
-- Per-selection displacement editing in millimeters.
-- Motion tracks for selected actuators:
-  - **Points** mode for hand-placed displacement points over time.
-  - **Frequency Wave** mode for sine-wave-style motion with amplitude, baseline, frequency, phase lag, and finite or infinite cycle count.
-- Browser preview of the generated wall pattern.
-- Arduino sketch generation with:
-  - all 64 servo channels,
-  - PCA9685 board addresses,
-  - row/column mapping,
-  - board direction signs,
-  - center calibration offsets,
-  - PWM clamps,
-  - per-actuator amplitude, frequency, and phase tables.
-- Import of sketches generated by this UI so an exported `.ino` can be used as a design record.
-- Local browser persistence through `localStorage`.
-
-Current intentional limitations:
-
-- The browser does not stream commands to the Arduino during an experiment.
-- The UI does not read live actuator telemetry.
-- The UI does not detect servo faults, brownouts, stalls, or overheating.
-- The generated sketch is uploaded manually through Arduino IDE.
-- The current Arduino export path converts the experiment into per-actuator amplitude, frequency, and phase tables. Verify the generated code before using point-heavy experiments or designs that depend on baseline offsets or finite-cycle stopping.
-
-## Required Software
-
-Install these before running the project or uploading sketches:
-
-- Node.js 18 or newer.
-- npm, included with Node.js.
-- Arduino IDE.
-- Arduino library: `Adafruit PWM Servo Driver Library`.
-- Any Arduino board support package required for the controller board used in the lab.
-
-The React app has a small dependency set:
-
-- `react`
-- `react-dom`
-- `react-router-dom`
-- `vite`
-
-## Required Hardware Context
-
-The generated Arduino sketch assumes the current wall electronics layout:
-
-| Component | Assumption |
-| --- | --- |
-| Wall size | 4 rows x 16 columns |
-| Total servos | 64 |
-| PWM driver | 4 PCA9685 boards |
-| Channels per board | 16 |
-| Servo PWM frequency | 50 Hz |
-| I2C board addresses | `0x40`, `0x41`, `0x42`, `0x43` |
-| Servo PWM clamp | `SERVOMIN = 102`, `SERVOMAX = 512` |
-| Arduino serial baud | `9600` |
-
-Board-to-row mapping used by the sketches:
-
-| PCA9685 address | UI row | Notes |
-| --- | --- | --- |
-| `0x41` | Row 1 | Top row in the UI model |
-| `0x40` | Row 2 | Second row |
-| `0x43` | Row 3 | Third row |
-| `0x42` | Row 4 | Bottom row in the UI model |
-
-The channel-to-column mapping is not a simple left-to-right count. The generated sketch includes a `getPhysicalColumn(...)` function that converts each PCA9685 channel into the correct wall column. If the wiring harness changes, update this function in the generated sketch path before running hardware tests.
-
-The sketches also encode board direction signs:
-
-- Boards `0x40` and `0x41`: negative sign.
-- Boards `0x42` and `0x43`: positive sign.
-
-These signs compensate for opposite actuator mounting directions. If a row moves in the opposite physical direction from the intended displacement, check the direction sign before changing experiment values.
-
-## Repository Layout
-
-```text
-.
-|-- README.md
-|-- package.json
-|-- package-lock.json
-|-- vite.config.js
-|-- index.html
-|-- arduino_wall_controller/
-|   `-- arduino_wall_controller.ino
-|-- arduino_demo_patterns/
-|   `-- arduino_demo_patterns.ino
-`-- src/
-    |-- App.jsx
-    |-- main.jsx
-    |-- components/
-    |-- context/
-    |   `-- ExperimentContext.jsx
-    |-- data/
-    |   `-- presets.js
-    |-- hooks/
-    |-- pages/
-    |   |-- Home.jsx
-    |   `-- ExperimentSetup.jsx
-    |-- styles/
-    |   `-- app.css
-    `-- utils/
-        |-- arduinoSketch.js
-        |-- grid.js
-        |-- patterns.js
-        `-- storage.js
-```
-
-The active routes are:
-
-- `/` - sketch generator, preview, import, copy, and download controls.
-- `/actuators` - actuator grid editor and motion-track editor.
-
-Some older prototype pages may remain in `src/pages/`, but the active application route configuration is defined in `src/App.jsx`.
-
-## Installing the Web App
-
-From the repository root:
-
-```bash
-npm install
-```
-
-This installs the JavaScript dependencies listed in `package.json`.
-
-If installation fails:
-
-- Confirm Node.js is installed with `node --version`.
-- Confirm npm is installed with `npm --version`.
-- Delete `node_modules` only if you are intentionally doing a clean reinstall.
-- Run `npm install` again from the repository root, not from a subfolder.
-
-## Running the Web App
-
-Start the local development server:
-
-```bash
-npm run dev
-```
-
-Vite will print a local URL. Open that URL in a browser on the lab computer.
-
-For a production build:
+To check that the app builds:
 
 ```bash
 npm run build
-npm run preview
 ```
 
-The production build is useful when checking that the app still compiles after code changes. For normal experiment preparation, `npm run dev` is sufficient.
+## Basic Workflow
 
-## First-Time Operator Workflow
+1. Open the web app.
+2. Click **New / Template** to start from a template, or continue editing the current experiment.
+3. Click **Edit Grid** to open the actuator editor.
+4. Select actuators on the 4 x 16 grid and assign displacement or motion settings.
+5. Return to the main sketch generator page.
+6. Click **Preview** to inspect the browser simulation.
+7. Click **Download .ino** or **Copy Arduino Code**.
+8. Open the sketch in Arduino IDE, compile it, and upload it to the Arduino.
+9. Run the device using the lab's physical power and safety procedure.
 
-Use this workflow when preparing a new experiment.
+## Important Hardware Note
 
-1. Start the app with `npm run dev`.
-2. Open the local Vite URL.
-3. On the sketch generator page, click **New / Template**.
-4. Pick a starting template or choose **Start from Scratch**.
-5. Click **Edit Grid**.
-6. Select one or more actuators on the 4 x 16 grid.
-7. Enter a displacement in millimeters for the selected actuators.
-8. Add or edit motion settings for the selected actuators.
-9. Return to the main page.
-10. Press **Preview** and watch the simulated wall pattern.
-11. If the preview is correct, use **Download .ino** or **Copy Arduino Code**.
-12. Upload the sketch in Arduino IDE.
-13. With the lab safety procedure in place, power the actuator system and run the uploaded pattern.
-14. Save the exported `.ino` with the experiment notes, date, operator name, and test conditions.
+The browser app does not directly control live hardware. It generates Arduino code. After that code is uploaded, the Arduino runs the device locally. The browser **Preview**, **Pause**, and **Reset** buttons only affect the on-screen simulation, not the physical wall.
 
-## Sketch Generator Page
+## What the App Provides
 
-The sketch generator is the default page at `/`.
+- 4 row x 16 column actuator editor for all 64 actuators.
+- Templates including **UIUC Wave**, **Flat Hold**, **Center Bump Hold**, and **Traveling Bump**.
+- Cell, row, column, rectangle, all-cell, and active-pattern selection tools.
+- Displacement editing in millimeters.
+- Motion tracks using either point-based timelines or frequency waves.
+- Browser preview of the designed pattern.
+- Arduino sketch export with board mapping, calibrated center offsets, direction signs, and PWM clamps.
+- Import of `.ino` files generated by this UI.
+- Local browser persistence through `localStorage`.
 
-Primary controls:
+The app does not stream real-time commands to the Arduino. Once uploaded, the Arduino owns the timing and sends PWM commands to the servo driver boards locally.
 
-- **New / Template** opens the experiment template dialog.
-- **Edit Grid** opens the actuator editor.
-- **Copy Arduino Code** copies the generated sketch to the clipboard.
-- **Download .ino** saves the generated sketch as an Arduino file.
-- **Import .ino** loads a sketch generated by this UI back into the app.
-- **Preview** starts the browser-only animation.
-- **Pause** pauses the browser-only animation.
-- **Reset** resets the browser-only preview time.
+## Editing Patterns
 
-The preview panel samples the current actuator grid and motion tracks in the browser. This preview is meant for visual inspection, screen recording, and sanity checking. It does not indicate that hardware is connected or safe.
+Use `/actuators` or the **Edit Grid** button to modify the wall pattern.
 
-The design summary shows:
+- Select cells directly on the grid, or use row/column selection tools.
+- Set **Displacement (mm)** for the selected actuators.
+- Use **Points** mode for hand-defined displacement changes over time.
+- Use **Frequency Wave** mode for repeated motion with amplitude, baseline, frequency, phase lag, and cycle settings.
+- Use phase lag across columns or rows to create traveling waves.
+- Use **Smooth** to soften sharp spatial transitions.
+- Use undo/redo buttons or `Ctrl+Z` / `Cmd+Z`.
 
-- active actuator count,
-- number of wave tracks,
-- number of point tracks,
-- whether the generated sketch includes calibrated centers and PWM clamps.
+## Exporting to Arduino
 
-## Actuator Editor Page
+After previewing the pattern:
 
-The actuator editor is available at `/actuators`.
+1. Download or copy the generated sketch from the main page.
+2. Open it in Arduino IDE.
+3. Install the `Adafruit PWM Servo Driver Library` if needed.
+4. Select the correct board and serial port.
+5. Compile and upload.
+6. Open Serial Monitor at `9600` baud only if startup messages are needed.
 
-The grid is organized as 4 rows by 16 columns. Each cell represents one actuator. Higher displacement values appear with stronger heatmap coloring.
+The generated sketch assumes the current wall electronics and should be reviewed if wiring, servo calibration, board addresses, or actuator orientation changes.
 
-Selection methods:
+## Hardware Assumptions
 
-- Click an actuator to select it.
-- Drag across the grid to select a rectangular region.
-- Use **Select Row** for a full row.
-- Use **Select Column** for a full column.
-- Use **Select All** for all 64 actuators.
-- Use **Select Active Pattern** for every actuator currently involved in the grid or motion tracks.
-- Use **Clear Selection** to remove the current selection.
+| Item | Value |
+| --- | --- |
+| Wall size | 4 rows x 16 columns |
+| Total servos | 64 |
+| PWM driver boards | 4 PCA9685 boards |
+| I2C addresses | `0x40`, `0x41`, `0x42`, `0x43` |
+| Servo PWM frequency | 50 Hz |
+| PWM clamp | `SERVOMIN = 102`, `SERVOMAX = 512` |
+| Serial baud | `9600` |
 
-Editing displacement:
+Board-to-row mapping:
 
-1. Select one or more cells.
-2. Enter a value in **Displacement (mm)**.
-3. The value is clamped by the experiment maximum displacement.
-4. Use **Reset All to 0 mm** to flatten the whole grid.
-5. Use **Smooth** to average neighboring displacements and soften sharp spatial transitions.
+| PCA9685 address | UI row |
+| --- | --- |
+| `0x41` | Row 1 |
+| `0x40` | Row 2 |
+| `0x43` | Row 3 |
+| `0x42` | Row 4 |
 
-Undo and redo:
+The channel-to-column mapping is handled in the generated sketch by `getPhysicalColumn(...)`. Direction compensation is handled by `DISPLACEMENT_SIGN_BY_BOARD`. Calibration offsets are stored in `centerOffsetDegrees`.
 
-- Use the page buttons.
-- Use `Ctrl+Z` / `Cmd+Z` for undo.
-- Use `Ctrl+Y` or `Shift+Cmd+Z` for redo.
+## Calibration Notes
 
-## Motion Track Editing
+The generated Arduino sketch uses a fixed `centerOffsetDegrees` table for all 64 servos. These offsets shift each servo's neutral position so the physical wall starts from the intended flat or zero state.
 
-Motion tracks define how selected actuators move over time.
+If the wall is recalibrated or servos are replaced:
 
-When actuators are selected, the **Selection Motion** panel will show the active track. If the selected actuators are part of a larger track, editing the selection creates settings for only the selected actuators.
+1. Measure the new neutral offsets using the lab calibration procedure.
+2. Update the offset table in `src/utils/arduinoSketch.js`.
+3. If the standalone Arduino sketches are still being used, update their `centerOffsetDegrees` tables too:
+   - `arduino_wall_controller/arduino_wall_controller.ino`
+   - `arduino_demo_patterns/arduino_demo_patterns.ino`
+4. Generate a simple low-amplitude sketch from the UI.
+5. Upload it and confirm that every row, column, and actuator moves in the expected direction.
 
-### Points Mode
+If an entire row moves in the wrong direction, check `DISPLACEMENT_SIGN_BY_BOARD`. If columns appear out of order, check `getPhysicalColumn(...)`. If only one actuator sits too high or too low, check that actuator's value in `centerOffsetDegrees`.
 
-Use **Points** mode when you want a displacement schedule over time.
+## Included Arduino Sketches
 
-Each point has:
+`arduino_wall_controller/arduino_wall_controller.ino` is a standalone full-wall wave controller useful for bring-up and mapping checks.
 
-- time in seconds,
-- displacement in millimeters,
-- interpolation to the next point.
-
-Interpolation options:
-
-- Linear interpolation changes displacement at a constant rate.
-- Sine interpolation eases into and out of the next point.
-
-Typical point-track use cases:
-
-- raise a local bump,
-- hold a displacement for a fixed time,
-- ramp a group of actuators up and down,
-- prototype a pattern before turning it into a frequency wave.
-
-### Frequency Wave Mode
-
-Use **Frequency Wave** mode when you want repeated oscillatory motion.
-
-Wave fields:
-
-- **Frequency (Hz)**: oscillation frequency.
-- **Amplitude (mm)**: oscillation height.
-- **Baseline (mm)**: offset added to the wave.
-- **Infinite Cycles**: keeps the wave running indefinitely.
-- **Cycles**: finite number of cycles when infinite cycles are off.
-- **Phase Lag (deg)**: phase offset for that selected group.
-
-Phase lag is useful for traveling waves. For example, adjacent columns can use increasing phase lag values so the crest appears to move along the wall.
-
-## Exporting and Uploading Arduino Code
-
-After the preview looks correct:
-
-1. Click **Download .ino**.
-2. Open the downloaded file in Arduino IDE.
-3. Confirm the IDE has the `Adafruit PWM Servo Driver Library` installed.
-4. Select the correct Arduino board and port.
-5. Compile the sketch.
-6. Upload it to the Arduino.
-7. Open the Serial Monitor at `9600` baud if you need startup messages.
-8. Apply actuator power according to the lab procedure.
-
-The generated sketch includes the wall control logic. It does not require the browser to stay connected after upload.
-
-Before running the physical wall, inspect these generated constants if the hardware has changed:
-
-- `Adafruit_PWMServoDriver pwmBoards[]`
-- `SERVOMIN`
-- `SERVOMAX`
-- `SERVO_FREQ`
-- `DISPLACEMENT_SIGN_BY_BOARD`
-- `centerOffsetDegrees`
-- `getPhysicalRow(...)`
-- `getPhysicalColumn(...)`
-
-## Arduino Sketch Files Included in This Repository
-
-The repository includes two standalone Arduino sketches in addition to sketches generated by the web UI.
-
-### `arduino_wall_controller/arduino_wall_controller.ino`
-
-This is a standalone wave controller sketch. It drives all 64 servos using a full-wall amplitude mask and a positive sine-style traveling wave. Use it as a simple hardware bring-up sketch or as a reference for board mapping, center offsets, and row/column conversion.
-
-### `arduino_demo_patterns/arduino_demo_patterns.ino`
-
-This is a standalone demo sketch with serial-selectable patterns.
-
-Serial commands:
+`arduino_demo_patterns/arduino_demo_patterns.ino` is a standalone demo sketch with serial commands:
 
 ```text
 sine    positive-only traveling wave
@@ -367,140 +169,36 @@ flat    hold all servos at calibrated zero
 help    print available commands
 ```
 
-Use the Arduino Serial Monitor at `9600` baud. Type one command at a time and press enter.
+Use Serial Monitor at `9600` baud.
 
-## Calibration Notes
+## Saving Experiment Records
 
-The Arduino export uses a fixed `centerOffsetDegrees` table for all 64 servos. These offsets compensate individual servo neutral positions.
+The app saves working state in browser `localStorage`, which is local to the computer and browser. Clearing browser data can erase saved experiments.
 
-If the mechanical calibration changes:
-
-1. Recalibrate the physical wall using the lab procedure.
-2. Update the offset table in `src/utils/arduinoSketch.js` so future generated sketches include the new values.
-3. Update the standalone sketches if they are still used for bring-up or demos.
-4. Generate a low-amplitude test sketch.
-5. Confirm each row and column moves in the expected physical direction.
-
-Do not hide calibration problems by increasing displacement limits. Bad center offsets can create unnecessary mechanical stress and can make the wall appear to run the wrong pattern.
-
-## Saving and Reusing Experiments
-
-The app stores current state and saved experiments in browser `localStorage`.
-
-Important implications:
-
-- Saved experiments are local to the browser and computer.
-- Clearing browser site data can remove saved experiments.
-- Saved experiments are not automatically shared through Git.
-- The exported `.ino` file is the best portable record of an experiment design.
-- Use **Import .ino** to reload a UI-generated sketch into the app.
-
-Recommended experiment record:
-
-- exported `.ino` file,
-- experiment name,
-- date and time,
-- operator,
-- flume conditions,
-- wall configuration notes,
-- any calibration changes,
-- videos or sensor data collected during the run.
+For experiment records, save the exported `.ino` file with the run date, operator, flume conditions, calibration notes, videos, and sensor data. A UI-generated `.ino` can be reloaded with **Import .ino**.
 
 ## Troubleshooting
 
-### The web app will not start
+If the web app will not start, run `npm install`, confirm `node --version` and `npm --version`, and make sure commands are run from the repository root.
 
-- Run `npm install` first.
-- Make sure the command is being run from the repository root.
-- Check Node.js with `node --version`.
-- If the default Vite port is already in use, Vite will print a different URL. Use the printed URL.
+If Arduino compilation fails, install the `Adafruit PWM Servo Driver Library`, confirm the selected board and port, and check that the copied sketch is complete.
 
-### The page opens but my previous experiment is missing
+If the Arduino uploads but servos do not move, check actuator power, shared ground, PCA9685 power, I2C wiring, and board addresses.
 
-- The app stores state in browser `localStorage`.
-- Check that you are using the same browser and local URL.
-- If browser data was cleared, reload from a saved `.ino` using **Import .ino**.
-
-### Copy Arduino Code does not work
-
-- Some browsers block clipboard access outside secure or active contexts.
-- Use **Download .ino** instead, or manually select the generated code in the text area.
-
-### Arduino IDE cannot compile the sketch
-
-- Install `Adafruit PWM Servo Driver Library`.
-- Confirm the selected board matches the connected Arduino.
-- Confirm the sketch file is inside a folder with the same name if the Arduino IDE requests it.
-- Check that no copied text is missing from the top or bottom of the sketch.
-
-### Arduino uploads, but servos do not move
-
-- Confirm actuator power is on and the supply is set correctly.
-- Confirm Arduino ground and servo supply ground are common.
-- Confirm the PCA9685 boards are powered.
-- Confirm the I2C addresses match `0x40`, `0x41`, `0x42`, and `0x43`.
-- Confirm SDA/SCL are connected to the correct Arduino pins.
-- Try the standalone demo sketch and the `flat` command before running a complex pattern.
-
-### A row or column moves incorrectly
-
-- Stop the hardware first.
-- Check whether the issue follows a PCA9685 board, a channel, a servo, or a mechanical linkage.
-- Review `getPhysicalColumn(...)` if channels appear spatially scrambled.
-- Review `DISPLACEMENT_SIGN_BY_BOARD` if a full row moves opposite the intended direction.
-- Review `centerOffsetDegrees` if a single servo has a bad neutral position.
-
-### Motion is too aggressive
-
-- Lower the displacement values in the actuator editor.
-- Lower wave amplitude.
-- Lower frequency.
-- Test fewer active actuators.
-- Confirm the power supply can handle simultaneous motion for the selected pattern.
+If rows or columns move incorrectly, stop hardware first, then check `getPhysicalColumn(...)`, `DISPLACEMENT_SIGN_BY_BOARD`, and `centerOffsetDegrees`.
 
 ## Development Notes
 
-Core files:
+Important files:
 
-- `src/pages/Home.jsx` controls the sketch generator, preview, import, copy, and download UI.
-- `src/pages/ExperimentSetup.jsx` controls actuator selection, displacement editing, and motion-track editing.
-- `src/context/ExperimentContext.jsx` stores the active experiment, saved experiments, run preview state, calibration, and undo/redo history.
-- `src/data/presets.js` defines default experiments and templates.
-- `src/utils/arduinoSketch.js` generates and imports Arduino sketches.
-- `src/utils/patterns.js` samples motion tracks for browser preview.
-- `src/utils/grid.js` defines grid utilities and constants.
+- `src/pages/Home.jsx` - sketch generator and browser preview.
+- `src/pages/ExperimentSetup.jsx` - actuator grid and motion editor.
+- `src/context/ExperimentContext.jsx` - experiment state and local persistence.
+- `src/data/presets.js` - templates and default experiments.
+- `src/utils/arduinoSketch.js` - Arduino sketch generation and import.
+- `src/utils/patterns.js` - browser-side motion sampling.
 
-Useful commands:
+Active routes:
 
-```bash
-npm run dev
-npm run build
-npm run preview
-```
-
-Before handing the software to another operator, run:
-
-```bash
-npm run build
-```
-
-This catches basic compile errors in the React app.
-
-## Suggested Lab Procedure for a New Pattern
-
-Use this as a starting checklist and adapt it to the lab's formal SOP.
-
-1. Start from a known template or import a previous `.ino`.
-2. Make one change at a time in the actuator editor.
-3. Preview the pattern in the browser.
-4. Export the `.ino`.
-5. Compile the sketch in Arduino IDE.
-6. Upload with the actuator area clear.
-7. Test at low displacement or with a small active region when possible.
-8. Confirm row direction, column order, and amplitude.
-9. Run the full experiment.
-10. Save the generated sketch and experiment metadata with the run data.
-
-## Citation / Report Description
-
-This software provides a browser-based operator interface for a 4 x 16 programmable deformable wall. Operators design actuator displacement fields and simple motion tracks in React, preview the wall command in the browser, and export self-contained Arduino sketches that drive four PCA9685 servo controller boards. The Arduino sketch executes timing locally, which avoids dependence on a browser-to-hardware command stream during flume experiments.
+- `/` - sketch generator.
+- `/actuators` - actuator editor.
